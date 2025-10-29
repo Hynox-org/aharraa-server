@@ -75,7 +75,7 @@ router.post("/signup", async (req, res) => {
         console.warn("Failed to mirror user in MongoDB", mongoErr);
       }
     }
-
+    const accessToken = data?.session?.access_token || null;
     res.status(200).json({
       message: "Registered successful",
       accessToken,
@@ -224,7 +224,6 @@ router.get("/oauth/:provider", async (req, res) => {
   }
 });
 
-
 /**
  * @openapi
  * /auth/verify:
@@ -249,8 +248,7 @@ router.get("/oauth/:provider", async (req, res) => {
 router.post("/verify", async (req, res) => {
   try {
     const { token } = req.body;
-    if (!token)
-      return res.status(400).json({ error: "token required" });
+    if (!token) return res.status(400).json({ error: "token required" });
 
     const { data, error } = await supabase.auth.getUser(token);
     if (error) return res.status(401).json({ error: error.message });
