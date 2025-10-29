@@ -76,20 +76,10 @@ router.post("/signup", async (req, res) => {
       }
     }
 
-    // Optionally set session cookie with access token if available
-    const accessToken = data?.session?.access_token || null;
-    if (accessToken && req.session) {
-      req.session.token = accessToken;
-      req.session.userId = user?.id || null;
-    }
-
-    return res
-      .set({
-        "X-Access-Token": accessToken,
-        "X-User-Id": user?.id || "",
-        "Access-Control-Expose-Headers": "X-Access-Token, X-User-Id",
-      })
-      .json({ ok: true });
+    res.status(200).json({
+      message: "Login successful",
+      accessToken,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
@@ -224,13 +214,14 @@ router.post("/signin", async (req, res) => {
  *       200:
  *         description: Returns a URL to redirect the user to start Google OAuth
  */
-router.get("/oauth/google", async (req, res) => {
+router.get("/oauth/:provider", async (req, res) => {
   try {
+    const { provider } = req.params;
     const redirectTo =
       process.env.SUPABASE_REDIRECT_URL || req.query.redirect || null;
     // This returns a URL to redirect the user to
     const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
+      provider: provider,
       options: { redirectTo },
     });
     if (error) return res.status(400).json({ error: error.message });
@@ -351,14 +342,17 @@ router.post("/logout", (req, res) => {
  */
 router.post("/verify", async (req, res) => {
   try {
-    const { access_token } = req.body;
-    if (!access_token)
-      return res.status(400).json({ error: "access_token required" });
+    const { token } = req.body;
+    if (!token)
+      return res.status(400).json({ error: "token required" });
 
-    const { data, error } = await supabase.auth.getUser(access_token);
+    const { data, error } = await supabase.auth.getUser(token);
     if (error) return res.status(401).json({ error: error.message });
 
-    return res.json({ ok: true, user: data?.user });
+    return res.status(200).json({
+      message: "Token is valid",
+      user: data?.user,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
