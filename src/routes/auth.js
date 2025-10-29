@@ -77,7 +77,7 @@ router.post("/signup", async (req, res) => {
     }
 
     res.status(200).json({
-      message: "Login successful",
+      message: "Registered successful",
       accessToken,
     });
   } catch (err) {
@@ -179,18 +179,10 @@ router.post("/signin", async (req, res) => {
 
     // Optionally set session cookie with access token if available
     const accessToken = data?.session?.access_token || null;
-    if (accessToken && req.session) {
-      req.session.token = accessToken;
-      req.session.userId = user?.id || null;
-    }
-
-    return res
-      .set({
-        "X-Access-Token": accessToken,
-        "X-User-Id": user?.id || "",
-        "Access-Control-Expose-Headers": "X-Access-Token, X-User-Id",
-      })
-      .json({ ok: true });
+    res.status(201).json({
+      message: "Login successful",
+      accessToken,
+    });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "Internal server error" });
@@ -232,92 +224,6 @@ router.get("/oauth/:provider", async (req, res) => {
   }
 });
 
-/**
- * @openapi
- * /auth/callback:
- *   get:
- *     summary: OAuth callback endpoint for Supabase redirects
- *     tags:
- *       - Auth
- *     parameters:
- *       - in: query
- *         name: access_token
- *         schema:
- *           type: string
- *         required: true
- *         description: Access token returned by Supabase after OAuth
- *     responses:
- *       302:
- *         description: Redirects to front-end URL configured in SUPABASE_REDIRECT_URL
- */
-router.get("/callback", async (req, res) => {
-  try {
-    const access_token =
-      req.query.access_token || req.query.accessToken || null;
-    if (!access_token)
-      return res
-        .status(400)
-        .json({ error: "access_token query param required" });
-
-    const { data, error } = await supabase.auth.getUser(access_token);
-    if (error) return res.status(401).json({ error: error.message });
-
-    const user = data?.user;
-    if (user && user.id) {
-      try {
-        await User.findOneAndUpdate(
-          { supabaseId: user.id },
-          {
-            supabaseId: user.id,
-            email: user.email,
-            metadata: user.user_metadata || {},
-          },
-          { upsert: true, new: true }
-        );
-      } catch (mongoErr) {
-        console.warn("Failed to mirror user in MongoDB", mongoErr);
-      }
-    }
-
-    // set httpOnly session cookie
-    if (req.session) {
-      req.session.token = access_token;
-      req.session.userId = user?.id || null;
-    }
-
-    return res
-      .set({
-        "X-Access-Token": access_token,
-        "X-User-Id": user?.id || "",
-        "Access-Control-Expose-Headers": "X-Access-Token, X-User-Id",
-      })
-      .json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-/**
- * @openapi
- * /auth/logout:
- *   post:
- *     summary: Clear server session (logout)
- *     tags:
- *       - Auth
- *     responses:
- *       200:
- *         description: Session cleared
- */
-router.post("/logout", (req, res) => {
-  try {
-    if (req.session) req.session = null;
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
 
 /**
  * @openapi
