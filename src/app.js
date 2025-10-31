@@ -9,12 +9,20 @@ const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
+const vendorRoutes = require('./routes/vendors');
+const mealRoutes = require('./routes/meals');
+const planRoutes = require('./routes/plans');
+const accompanimentRoutes = require('./routes/accompaniments');
+const cartRoutes = require('./routes/cart');
+const orderRoutes = require('./routes/orders');
+const deliveryAddressRoutes = require('./routes/deliveryAddresses');
 
 const app = express();
 
 // Middleware
 app.use(helmet());
-app.use(cors({ origin: true, credentials: true }));
+app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -54,6 +62,14 @@ app.get('/docs.json', (req, res) => res.json(swaggerSpec));
 
 // Routes
 app.use('/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/vendors', vendorRoutes);
+app.use('/api/meals', mealRoutes);
+app.use('/api/plans', planRoutes);
+app.use('/api/accompaniments', accompanimentRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/users', deliveryAddressRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, message: 'Aharraa server running' });

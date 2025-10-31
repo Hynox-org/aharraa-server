@@ -1,28 +1,28 @@
 /**
- * @fileoverview Auth routes for signup, signin, OAuth, and token verification
+ * @fileoverview Auth routes for signup, signin, and token verification
  */
 const express = require("express");
 const Joi = require("joi");
-const supabase = require("../config/supabase");
 const User = require("../models/User");
+const supabase = require("../config/supabase"); // Import Supabase client
 
 const router = express.Router();
 
-const signupSchema = Joi.object({
+const registerSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required(),
 });
 
-const signinSchema = Joi.object({
+const loginSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().required(),
 });
 
 /**
  * @openapi
- * /auth/signup:
+ * /api/auth/register:
  *   post:
- *     summary: Create a new user using Supabase email/password
+ *     summary: Register a new user
  *     tags:
  *       - Auth
  *     requestBody:
@@ -32,9 +32,12 @@ const signinSchema = Joi.object({
  *           schema:
  *             type: object
  *             required:
+ *               - name
  *               - email
  *               - password
  *             properties:
+ *               name:
+ *                 type: string
  *               email:
  *                 type: string
  *                 format: email
@@ -42,55 +45,77 @@ const signinSchema = Joi.object({
  *                 type: string
  *                 minLength: 6
  *     responses:
- *       200:
- *         description: Signup successful (may require email confirmation)
+ *       201:
+ *         description: User registered successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Email already exists or validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
  */
 router.post("/signup", async (req, res) => {
   try {
-    const { error: validationError } = signupSchema.validate(req.body);
-    if (validationError)
-      return res.status(400).json({ error: validationError.message });
+    const { error: validationError } = registerSchema.validate(req.body);
+    if (validationError) {
+      return res.status(400).json({ message: validationError.details[0].message });
+    }
 
     const { email, password } = req.body;
 
-    // Use Supabase auth to create the user (server-side)
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) return res.status(400).json({ error: error.message });
-
-    // data contains user info (may be null if email confirmation is required)
-    const user = data?.user || data;
-    if (user && user.id) {
-      // Mirror a minimal user in MongoDB
-      try {
-        await User.findOneAndUpdate(
-          { supabaseId: user.id },
-          {
-            supabaseId: user.id,
-            email: user.email || email,
-            metadata: user.user_metadata || {},
-          },
-          { upsert: true, new: true }
-        );
-      } catch (mongoErr) {
-        console.warn("Failed to mirror user in MongoDB", mongoErr);
-      }
+    // Check if user already exists in MongoDB (optional, Supabase will also handle unique emails)
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ message: "Email already exists" });
     }
-    const accessToken = data?.session?.access_token || null;
-    res.status(200).json({
-      message: "Registered successful",
-      accessToken,
+
+    // Register user with Supabase Auth
+    const { data, error: supabaseError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (supabaseError) {
+      console.error("Supabase registration error:", supabaseError);
+      return res.status(400).json({ message: supabaseError.message });
+    }
+
+    if (!data || !data.user) {
+      return res.status(500).json({ message: "Supabase registration failed: No user data returned." });
+    }
+
+    // Save user data to MongoDB
+    user = new User({ name : email, email, supabaseId: data.user.id });
+    await user.save();
+
+    // Return Supabase access token
+    res.status(201).json({
+      message: "User registered successfully",
+      accessToken: data.session.access_token,
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 /**
  * @openapi
- * /auth/signin:
+ * /api/auth/login:
  *   post:
- *     summary: Sign in with email/password
+ *     summary: Authenticate a user and provide an access token
  *     tags:
  *       - Auth
  *     requestBody:
@@ -110,157 +135,241 @@ router.post("/signup", async (req, res) => {
  *                 type: string
  *     responses:
  *       200:
- *         description: Signin successful; returns Supabase session info
+ *         description: Login successful
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 ok:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     user:
- *                       type: object
- *                     session:
- *                       type: object
- *       400:
- *         description: Invalid request (validation error or invalid credentials)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 error:
+ *                 accessToken:
  *                   type: string
- *       500:
- *         description: Server error
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: Invalid credentials
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 error:
+ *                 message:
  *                   type: string
  */
 router.post("/signin", async (req, res) => {
   try {
-    const { error: validationError } = signinSchema.validate(req.body);
-    if (validationError)
-      return res.status(400).json({ error: validationError.message });
+    const { error: validationError } = loginSchema.validate(req.body);
+    if (validationError) {
+      return res.status(400).json({ message: validationError.details[0].message });
+    }
 
     const { email, password } = req.body;
 
-    // Server-side sign in
-    const { data, error } = await supabase.auth.signInWithPassword({
+    // Authenticate user with Supabase Auth
+    const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
-    if (error) return res.status(400).json({ error: error.message });
 
-    // Optionally mirror user to Mongo
-    const user = data?.user;
-    if (user && user.id) {
-      try {
-        await User.findOneAndUpdate(
-          { supabaseId: user.id },
-          {
-            supabaseId: user.id,
-            email: user.email || email,
-            metadata: user.user_metadata || {},
-          },
-          { upsert: true, new: true }
-        );
-      } catch (mongoErr) {
-        console.warn("Failed to mirror user in MongoDB", mongoErr);
-      }
+    if (supabaseError) {
+      console.error("Supabase login error:", supabaseError);
+      return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    // Optionally set session cookie with access token if available
-    const accessToken = data?.session?.access_token || null;
-    res.status(201).json({
+    if (!data || !data.user) {
+      return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    // Find user in MongoDB using supabaseId
+    const user = await User.findOne({ supabaseId: data.user.id });
+    if (!user) {
+      // This case should ideally not happen if registration flow is correct
+      return res.status(401).json({ message: "User not found in database" });
+    }
+
+    // Return Supabase access token
+    res.status(200).json({
       message: "Login successful",
-      accessToken,
+      accessToken: data.session.access_token,
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 /**
  * @openapi
- * /auth/oauth/google:
+ * /api/auth/validate-token:
  *   get:
- *     summary: Get a Supabase OAuth redirect URL for Google
+ *     summary: Validate the user's access token and return basic user details.
  *     tags:
  *       - Auth
- *     parameters:
- *       - in: query
- *         name: redirect
- *         schema:
- *           type: string
- *         description: Optional redirect URL after OAuth
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Returns a URL to redirect the user to start Google OAuth
- */
-router.get("/oauth/:provider", async (req, res) => {
-  try {
-    const { provider } = req.params;
-    const redirectTo =
-      process.env.SUPABASE_REDIRECT_URL || req.query.redirect || null;
-    // This returns a URL to redirect the user to
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: provider,
-      options: { redirectTo },
-    });
-    if (error) return res.status(400).json({ error: error.message });
-    return res.json({ ok: true, url: data?.url });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-/**
- * @openapi
- * /auth/verify:
- *   post:
- *     summary: Verify a Supabase access token and return user info
- *     tags:
- *       - Auth
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [access_token]
- *             properties:
- *               access_token:
- *                 type: string
- *     responses:
- *       200:
- *         description: Token valid and user info returned
+ *         description: Token is valid
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *       401:
+ *         description: Invalid or expired token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
  */
 router.post("/verify", async (req, res) => {
   try {
-    const { token } = req.body;
-    if (!token) return res.status(400).json({ error: "token required" });
+    const token = req.body.token;
+    if (!token) {
+      return res.status(401).json({ message: "No token provided" });
+    }
 
-    const { data, error } = await supabase.auth.getUser(token);
-    if (error) return res.status(401).json({ error: error.message });
+    // Verify token with Supabase
+    const { data: supabaseUser, error: supabaseError } = await supabase.auth.getUser(token);
 
-    return res.status(200).json({
+    if (supabaseError || !supabaseUser || !supabaseUser.user) {
+      console.error("Supabase token validation error:", supabaseError);
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    // Find user in MongoDB using supabaseId
+    const user = await User.findOne({ supabaseId: supabaseUser.user.id });
+    if (!user) {
+      return res.status(401).json({ message: "User not found in database" });
+    }
+
+    res.status(200).json({
       message: "Token is valid",
-      user: data?.user,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+      },
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
+});
+
+/**
+ * @openapi
+ * /api/auth/oauth/google:
+ *   get:
+ *     summary: Initiate Google OAuth login
+ *     tags:
+ *       - Auth
+ *     responses:
+ *       302:
+ *         description: Redirects to Google for authentication
+ */
+router.get("/oauth/google", async (req, res) => {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: process.env.SUPABASE_OAUTH_REDIRECT_URL || 'http://localhost:3000/auth/callback', // Ensure this matches your Supabase redirect URL
+    },
+  });
+
+  if (error) {
+    console.error("Supabase OAuth initiation error:", error);
+    return res.status(500).json({ message: "Failed to initiate OAuth login" });
+  }
+
+  return res.status(200).json({
+    url : data.url
+});
+});
+
+/**
+ * @openapi
+ * /api/auth/callback:
+ *   get:
+ *     summary: OAuth callback endpoint
+ *     tags:
+ *       - Auth
+ *     responses:
+ *       200:
+ *         description: Handles OAuth redirect and provides access token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: OAuth callback error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.get("/callback", async (req, res) => {
+  const { code, error } = req.query;
+
+  if (error) {
+    console.error("Supabase OAuth callback error:", error);
+    return res.status(400).json({ message: error });
+  }
+
+  if (code) {
+    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (exchangeError) {
+      console.error("Supabase code exchange error:", exchangeError);
+      return res.status(400).json({ message: exchangeError.message });
+    }
+
+    if (!data || !data.user) {
+      return res.status(400).json({ message: "OAuth callback failed: No user data returned." });
+    }
+
+    // Check if user exists in MongoDB, if not, create them
+    let user = await User.findOne({ supabaseId: data.user.id });
+    if (!user) {
+      user = new User({
+        name: data.user.user_metadata?.full_name || data.user.email, // Use full_name or email from Supabase
+        email: data.user.email,
+        supabaseId: data.user.id,
+      });
+      await user.save();
+    }
+
+    const accessToken = generateToken(user._id);
+
+    // Redirect to a frontend page with the access token or return JSON
+    // Return Supabase access token
+    return res.status(200).json({
+      message: "OAuth login successful",
+      accessToken: data.session.access_token,
+    });
+  }
+
+  return res.status(400).json({ message: "OAuth callback failed: No code provided." });
 });
 
 module.exports = router;

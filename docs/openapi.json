@@ -282,8 +282,288 @@
           }
         }
       }
+    },
+    "/api/orders": {
+      "post": {
+        "summary": "Create a new order in the system",
+        "tags": [
+          "Orders"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "userId",
+                  "items",
+                  "shippingAddress",
+                  "billingAddress",
+                  "paymentMethod",
+                  "totalAmount",
+                  "currency"
+                ],
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "description": "The ID of the user placing the order"
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "productId",
+                        "quantity",
+                        "price"
+                      ],
+                      "properties": {
+                        "productId": {
+                          "type": "string",
+                          "description": "The ID of the product (meal)"
+                        },
+                        "quantity": {
+                          "type": "number",
+                          "description": "The quantity of this product"
+                        },
+                        "price": {
+                          "type": "number",
+                          "description": "The price of this specific item (quantity * meal price * plan duration)"
+                        }
+                      }
+                    }
+                  },
+                  "shippingAddress": {
+                    "type": "object",
+                    "required": [
+                      "street",
+                      "city",
+                      "zip"
+                    ],
+                    "properties": {
+                      "street": {
+                        "type": "string"
+                      },
+                      "city": {
+                        "type": "string"
+                      },
+                      "zip": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "billingAddress": {
+                    "type": "object",
+                    "required": [
+                      "street",
+                      "city",
+                      "zip"
+                    ],
+                    "properties": {
+                      "street": {
+                        "type": "string"
+                      },
+                      "city": {
+                        "type": "string"
+                      },
+                      "zip": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "paymentMethod": {
+                    "type": "string",
+                    "description": "e.g., \"COD\" (Cash On Delivery), \"credit_card\", \"paypal\""
+                  },
+                  "totalAmount": {
+                    "type": "number",
+                    "format": "float",
+                    "description": "The total amount of the order"
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "The currency of the total amount, e.g., \"INR\""
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Order created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "The unique ID of the newly created order"
+                    },
+                    "userId": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "productId": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "number"
+                          },
+                          "price": {
+                            "type": "number"
+                          },
+                          "mealName": {
+                            "type": "string"
+                          },
+                          "planName": {
+                            "type": "string"
+                          },
+                          "vendorName": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "shippingAddress": {
+                      "type": "object",
+                      "properties": {
+                        "street": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "zip": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "billingAddress": {
+                      "type": "object",
+                      "properties": {
+                        "street": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "zip": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "paymentMethod": {
+                      "type": "string"
+                    },
+                    "totalAmount": {
+                      "type": "number",
+                      "format": "float"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "orderDate": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO date string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "confirmed",
+                        "delivered",
+                        "cancelled"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
-  "components": {},
-  "tags": []
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Orders",
+      "description": "Operations related to orders"
+    }
+  ]
 }
