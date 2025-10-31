@@ -7,6 +7,7 @@ const Order = require('../models/Order');
 const Meal = require('../models/Meal');
 const Plan = require('../models/Plan');
 const Vendor = require('../models/Vendor');
+const { createCashfreeOrder } = require('../utils/cashfree');
 
 // Joi schema for address
 const addressSchema = Joi.object({
@@ -28,7 +29,7 @@ const orderSchema = Joi.object({
     items: Joi.array().items(orderItemSchema).min(1).required(),
     shippingAddress: addressSchema.required(),
     billingAddress: addressSchema.required(),
-    paymentMethod: Joi.string().valid('COD', 'credit_card', 'paypal').required(),
+    paymentMethod: Joi.string().valid('COD', 'CC', 'UPI').required(),
     totalAmount: Joi.number().min(0).required(),
     currency: Joi.string().required(),
     deliveryAddresses: Joi.object().pattern(Joi.string(), addressSchema).min(1).required(),
@@ -82,6 +83,33 @@ router.post('/', authMiddleware.protect, async (req, res) => {
         });
 
         await order.save();
+
+        // If payment method is not COD, create Cashfree order
+        if (paymentMethod !== 'COD') {
+            const customerDetails = {
+                customer_id: userId, // Using userId as customer_id
+                customer_phone: req.user.phone || '9898989898', // Assuming user phone is available in req.user
+                customer_email: req.user.email || 'test@example.com', // Assuming user email is available in req.user
+                customer_name: req.user.name || 'Test User' // Assuming user name is available in req.user
+            };
+
+            try {
+                const cashfreeOrder = await createCashfreeOrder(
+                    order._id.toString(), // Use MongoDB order ID as Cashfree order_id
+                    totalAmount,
+                    customerDetails
+                );
+                order.paymentSessionId = cashfreeOrder.payment_session_id;
+                await order.save();
+                return res.status(201).json({ ...order.toObject(), payment_session_id: cashfreeOrder.payment_session_id });
+            } catch (cashfreeError) {
+                console.error('Error creating Cashfree order:', cashfreeError);
+                // If Cashfree order creation fails, you might want to revert the MongoDB order or mark it as failed
+                order.status = 'failed';
+                await order.save();
+                return res.status(500).json({ error: 'Payment Gateway Error', details: cashfreeError.message });
+            }
+        }
 
         res.status(201).json(order);
     } catch (error) {

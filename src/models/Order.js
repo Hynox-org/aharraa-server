@@ -26,9 +26,10 @@ const OrderSchema = new mongoose.Schema({
   orderDate: { type: Date, default: Date.now },
   status: {
     type: String,
-    enum: ["pending", "confirmed", "delivered", "cancelled"],
+    enum: ["pending", "confirmed", "delivered", "cancelled", "failed"],
     default: "pending",
   },
+  paymentSessionId: { type: String },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
   deliveryAddresses: { type: Map, of: AddressSchema, required: true }
