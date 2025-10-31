@@ -30,7 +30,8 @@ const OrderSchema = new mongoose.Schema({
     default: "pending",
   },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  deliveryAddresses: { type: Map, of: AddressSchema, required: true }
 });
 
 module.exports = mongoose.model('Order', OrderSchema);

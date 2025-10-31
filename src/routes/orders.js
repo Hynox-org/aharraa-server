@@ -31,12 +31,13 @@ const orderSchema = Joi.object({
     paymentMethod: Joi.string().valid('COD', 'credit_card', 'paypal').required(),
     totalAmount: Joi.number().min(0).required(),
     currency: Joi.string().required(),
+    deliveryAddresses: Joi.object().pattern(Joi.string(), addressSchema).min(1).required(),
 });
 
 // POST /api/orders - Create a new order
 router.post('/', authMiddleware.protect, async (req, res) => {
     try {
-        const { userId, items, shippingAddress, billingAddress, paymentMethod, totalAmount, currency } = req.body;
+        const { userId, items, shippingAddress, billingAddress, paymentMethod, totalAmount, currency, deliveryAddresses } = req.body;
 
         const { error } = orderSchema.validate(req.body);
         if (error) {
@@ -77,6 +78,7 @@ router.post('/', authMiddleware.protect, async (req, res) => {
             currency,
             orderDate: new Date(),
             status: 'pending',
+            deliveryAddresses,
         });
 
         await order.save();
@@ -97,13 +99,12 @@ router.get('/:userId', authMiddleware.protect, async (req, res) => {
         const { userId } = req.params;
 
         // Optional: Add authorization check to ensure the requesting user is the owner of the orders
-        if (req.user.id !== userId) {
+        if (!req.user || req.user.id !== userId) {
             return res.status(403).json({ message: 'Access denied. You can only view your own orders.' });
         }
 
-        const orders = await Order.find({ user: userId })
-            .populate('items.meal')
-            .populate('items.accompaniments')
+        const orders = await Order.find({ userId: userId })
+            .populate('items.productId')
             .sort({ orderDate: -1 });
 
         res.status(200).json(orders);
@@ -119,15 +120,17 @@ router.get('/details/:orderId', authMiddleware.protect, async (req, res) => {
         const { orderId } = req.params;
 
         const order = await Order.findById(orderId)
-            .populate('items.meal')
-            .populate('items.accompaniments');
+            .populate('items.productId'); // Changed from items.meal to items.productId
 
         if (!order) {
             return res.status(404).json({ message: 'Order not found' });
         }
 
         // Optional: Add authorization check to ensure the requesting user is the owner of the order
-        if (req.user.id !== order.user.toString()) {
+        // Ensure order.userId exists and is a valid ID before comparison
+        const orderUserId = order.userId ? order.userId.toString() : null;
+
+        if (!req.user || !orderUserId || req.user.id !== orderUserId) {
             return res.status(403).json({ message: 'Access denied. You can only view your own order details.' });
         }
 

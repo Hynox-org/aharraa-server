@@ -307,7 +307,8 @@
                   "billingAddress",
                   "paymentMethod",
                   "totalAmount",
-                  "currency"
+                  "currency",
+                  "deliveryAddresses"
                 ],
                 "properties": {
                   "userId": {
@@ -389,6 +390,29 @@
                   "currency": {
                     "type": "string",
                     "description": "The currency of the total amount, e.g., \"INR\""
+                  },
+                  "deliveryAddresses": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "object",
+                      "required": [
+                        "street",
+                        "city",
+                        "zip"
+                      ],
+                      "properties": {
+                        "street": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "zip": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "description": "Object of delivery addresses for the order, keyed by meal type (e.g., Breakfast, Lunch)"
                   }
                 }
               }
@@ -487,6 +511,24 @@
                         "delivered",
                         "cancelled"
                       ]
+                    },
+                    "deliveryAddresses": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                          "street": {
+                            "type": "string"
+                          },
+                          "city": {
+                            "type": "string"
+                          },
+                          "zip": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "description": "Object of delivery addresses for the order, keyed by meal type (e.g., Breakfast, Lunch)"
                     }
                   }
                 }
