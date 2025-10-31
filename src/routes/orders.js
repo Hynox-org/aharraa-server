@@ -84,6 +84,25 @@ router.post('/', authMiddleware.protect, async (req, res) => {
 
         await order.save();
 
+        res.status(201).json(order);
+    } catch (error) {
+        console.error('Error creating order:', error);
+        if (error.message.includes("Product with ID") || error.message.includes("Invalid product ID format")) {
+            return res.status(400).json({ error: "Bad Request", details: error.message });
+        }
+        res.status(500).json({ error: 'Internal Server Error', details: 'Database error during order creation' });
+    }
+});
+
+router.post('/payment', authMiddleware.protect, async (req, res) => {
+    try {
+        const { userId, items, shippingAddress, billingAddress, paymentMethod, totalAmount, currency, deliveryAddresses } = req.body;
+
+        const { error } = orderSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({ error: "Bad Request", details: `Validation failed: ${error.details[0].message}` });
+        }
+
         // If payment method is not COD, create Cashfree order
         if (paymentMethod !== 'COD') {
             const customerDetails = {
@@ -95,13 +114,11 @@ router.post('/', authMiddleware.protect, async (req, res) => {
 
             try {
                 const cashfreeOrder = await createCashfreeOrder(
-                    order._id.toString(), // Use MongoDB order ID as Cashfree order_id
+                    `${userId}-${Math.random(1000)}`, // Use MongoDB order ID as Cashfree order_id
                     totalAmount,
                     customerDetails
                 );
-                order.paymentSessionId = cashfreeOrder.payment_session_id;
-                await order.save();
-                return res.status(201).json({ ...order.toObject(), payment_session_id: cashfreeOrder.payment_session_id });
+                return res.status(201).json({ paymentSessionId: cashfreeOrder.payment_session_id });
             } catch (cashfreeError) {
                 console.error('Error creating Cashfree order:', cashfreeError);
                 // If Cashfree order creation fails, you might want to revert the MongoDB order or mark it as failed
@@ -111,7 +128,7 @@ router.post('/', authMiddleware.protect, async (req, res) => {
             }
         }
 
-        res.status(201).json(order);
+        return res.status(201).json({ paymentSessionId: cashfreeOrder.payment_session_id });
     } catch (error) {
         console.error('Error creating order:', error);
         if (error.message.includes("Product with ID") || error.message.includes("Invalid product ID format")) {
@@ -146,6 +163,10 @@ router.get('/:userId', authMiddleware.protect, async (req, res) => {
 router.get('/details/:orderId', authMiddleware.protect, async (req, res) => {
     try {
         const { orderId } = req.params;
+        // Validate orderId format before querying
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(404).json({ message: 'Order not found or invalid ID format' });
+        }
 
         const order = await Order.findById(orderId)
             .populate('items.productId'); // Changed from items.meal to items.productId
