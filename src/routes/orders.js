@@ -7,7 +7,7 @@ const Order = require('../models/Order');
 const Meal = require('../models/Meal');
 const Plan = require('../models/Plan');
 const Vendor = require('../models/Vendor');
-const { createCashfreeOrder } = require('../utils/cashfree');
+const { createCashfreeOrder, getCashfreeOrderDetails } = require('../utils/cashfree');
 
 // Joi schema for address
 const addressSchema = Joi.object({
@@ -35,7 +35,7 @@ const orderSchema = Joi.object({
     deliveryAddresses: Joi.object().pattern(Joi.string(), addressSchema).min(1).required(),
 });
 
-// POST /api/orders - Create a new order (after successful payment or for COD)
+// POST /api/orders - Create a new order (for COD payments or after successful external payment)
 router.post('/', authMiddleware.protect, async (req, res) => {
     try {
         const { userId, items, shippingAddress, billingAddress, paymentMethod, totalAmount, currency, deliveryAddresses, paymentSessionId } = req.body;
@@ -52,7 +52,6 @@ router.post('/', authMiddleware.protect, async (req, res) => {
 
         // Populate item details (mealName, planName, vendorName)
         const populatedItems = await Promise.all(items.map(async (item) => {
-            // Explicitly validate productId as ObjectId before querying
             if (!mongoose.Types.ObjectId.isValid(item.productId)) {
                 throw new Error(`Invalid product ID format: ${item.productId}`);
             }
@@ -83,7 +82,7 @@ router.post('/', authMiddleware.protect, async (req, res) => {
             totalAmount,
             currency,
             orderDate: new Date(),
-            status: paymentMethod === 'COD' ? 'confirmed' : 'confirmed', // Assuming payment is confirmed if this endpoint is called after successful payment
+            status: 'confirmed', // For COD, or if this endpoint is called after successful payment
             deliveryAddresses,
             paymentSessionId: paymentSessionId || undefined, // Store paymentSessionId if provided
         });
@@ -101,48 +100,97 @@ router.post('/', authMiddleware.protect, async (req, res) => {
 });
 
 router.post('/payment', authMiddleware.protect, async (req, res) => {
+    let order; // Declare order here so it's accessible in catch blocks
     try {
         const { userId, items, shippingAddress, billingAddress, paymentMethod, totalAmount, currency, deliveryAddresses } = req.body;
 
         const { error } = orderSchema.validate(req.body);
-
         if (error) {
             return res.status(400).json({ error: "Bad Request", details: `Validation failed: ${error.details[0].message}` });
         }
 
+        // Populate item details (mealName, planName, vendorName)
+        const populatedItems = await Promise.all(items.map(async (item) => {
+            if (!mongoose.Types.ObjectId.isValid(item.productId)) {
+                throw new Error(`Invalid product ID format: ${item.productId}`);
+            }
+            const meal = await Meal.findById(item.productId);
+            if (!meal) {
+                throw new Error(`Product with ID ${item.productId} not found.`);
+            }
+
+            const plan = await Plan.findById(meal.plan);
+            const vendor = await Vendor.findById(meal.vendor);
+
+            return {
+                productId: item.productId,
+                quantity: item.quantity,
+                price: item.price,
+                mealName: meal.name,
+                planName: plan ? plan.name : undefined,
+                vendorName: vendor ? vendor.name : undefined,
+            };
+        }));
+
+        order = new Order({
+            userId,
+            items: populatedItems,
+            shippingAddress,
+            billingAddress,
+            paymentMethod,
+            totalAmount,
+            currency,
+            orderDate: new Date(),
+            status: 'pending', // Initial status before payment gateway interaction
+            deliveryAddresses,
+        });
+
+        await order.save(); // Save the order to get its _id
+
         const customerDetails = {
-            customer_id: userId, // Using userId as customer_id
-            customer_phone: req.user.phone || '9898989898', // Assuming user phone is available in req.user
-            customer_email: req.user.email || 'test@example.com', // Assuming user email is available in req.user
-            customer_name: req.user.name || 'Test User' // Assuming user name is available in req.user
+            customer_id: userId,
+            customer_phone: req.user.phone || '9898989898',
+            customer_email: req.user.email || 'test@example.com',
+            customer_name: req.user.name || 'Test User'
         };
 
-        // Define a maximum allowed amount for Cashfree orders (e.g., 100,000 INR)
-        const MAX_CASHFREE_AMOUNT = 100000; // This should be configured based on actual Cashfree limits
-
-        // Round totalAmount to two decimal places as Cashfree might expect fixed-decimal values
+        const MAX_CASHFREE_AMOUNT = 100000;
         const roundedTotalAmount = parseFloat(totalAmount.toFixed(2));
 
         if (roundedTotalAmount > MAX_CASHFREE_AMOUNT) {
+            order.status = 'failed';
+            await order.save();
             return res.status(400).json({ error: 'Payment Gateway Error', details: `Order amount ${roundedTotalAmount} exceeds the maximum allowed limit of ${MAX_CASHFREE_AMOUNT}.` });
         }
 
         try {
             console.log(`Attempting to create Cashfree order for amount: ${roundedTotalAmount}`);
-            // Generate a temporary order ID for Cashfree, as the actual MongoDB order is not created yet
-            const tempCashfreeOrderId = `${userId}-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
             const cashfreeOrder = await createCashfreeOrder(
-                tempCashfreeOrderId,
+                order._id.toString(), // Use MongoDB order ID as Cashfree order_id
                 roundedTotalAmount,
                 customerDetails
             );
-            return res.status(201).json({ paymentSessionId: cashfreeOrder.payment_session_id, tempOrderId: tempCashfreeOrderId });
+            
+            order.paymentSessionId = cashfreeOrder.payment_session_id;
+            order.status = 'pending'; // Keep as pending until payment is confirmed by webhook or verification
+            await order.save();
+
+            return res.status(201).json({ paymentSessionId: cashfreeOrder.payment_session_id, orderId: order._id });
         } catch (cashfreeError) {
             console.error('Error creating Cashfree payment session:', cashfreeError);
+            order.status = 'failed';
+            await order.save();
             return res.status(500).json({ error: 'Payment Gateway Error', details: cashfreeError.message });
         }
     } catch (error) {
         console.error('Error in payment session creation:', error);
+        if (order && order._id) {
+            order.status = 'failed';
+            await order.save();
+        }
+        if (error.message.includes("Product with ID") || error.message.includes("Invalid product ID format")) {
+            return res.status(400).json({ error: "Bad Request", details: error.message });
+        }
         res.status(500).json({ error: 'Internal Server Error', details: 'Database error during payment session creation' });
     }
 });
