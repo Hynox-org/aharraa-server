@@ -35,12 +35,17 @@ const orderSchema = Joi.object({
     deliveryAddresses: Joi.object().pattern(Joi.string(), addressSchema).min(1).required(),
 });
 
-// POST /api/orders - Create a new order
+// POST /api/orders - Create a new order (after successful payment or for COD)
 router.post('/', authMiddleware.protect, async (req, res) => {
     try {
-        const { userId, items, shippingAddress, billingAddress, paymentMethod, totalAmount, currency, deliveryAddresses } = req.body;
+        const { userId, items, shippingAddress, billingAddress, paymentMethod, totalAmount, currency, deliveryAddresses, paymentSessionId } = req.body;
 
-        const { error } = orderSchema.validate(req.body);
+        // Add paymentSessionId to the schema for validation
+        const orderSchemaWithPaymentSession = orderSchema.keys({
+            paymentSessionId: Joi.string().optional(),
+        });
+
+        const { error } = orderSchemaWithPaymentSession.validate(req.body);
         if (error) {
             return res.status(400).json({ error: "Bad Request", details: `Validation failed: ${error.details[0].message}` });
         }
@@ -78,8 +83,9 @@ router.post('/', authMiddleware.protect, async (req, res) => {
             totalAmount,
             currency,
             orderDate: new Date(),
-            status: 'pending',
+            status: paymentMethod === 'COD' ? 'confirmed' : 'confirmed', // Assuming payment is confirmed if this endpoint is called after successful payment
             deliveryAddresses,
+            paymentSessionId: paymentSessionId || undefined, // Store paymentSessionId if provided
         });
 
         await order.save();
@@ -99,42 +105,45 @@ router.post('/payment', authMiddleware.protect, async (req, res) => {
         const { userId, items, shippingAddress, billingAddress, paymentMethod, totalAmount, currency, deliveryAddresses } = req.body;
 
         const { error } = orderSchema.validate(req.body);
+
         if (error) {
             return res.status(400).json({ error: "Bad Request", details: `Validation failed: ${error.details[0].message}` });
         }
 
-        // If payment method is not COD, create Cashfree order
-        if (paymentMethod !== 'COD') {
-            const customerDetails = {
-                customer_id: userId, // Using userId as customer_id
-                customer_phone: req.user.phone || '9898989898', // Assuming user phone is available in req.user
-                customer_email: req.user.email || 'test@example.com', // Assuming user email is available in req.user
-                customer_name: req.user.name || 'Test User' // Assuming user name is available in req.user
-            };
+        const customerDetails = {
+            customer_id: userId, // Using userId as customer_id
+            customer_phone: req.user.phone || '9898989898', // Assuming user phone is available in req.user
+            customer_email: req.user.email || 'test@example.com', // Assuming user email is available in req.user
+            customer_name: req.user.name || 'Test User' // Assuming user name is available in req.user
+        };
 
-            try {
-                const cashfreeOrder = await createCashfreeOrder(
-                    `${userId}-${Math.random(1000)}`, // Use MongoDB order ID as Cashfree order_id
-                    totalAmount,
-                    customerDetails
-                );
-                return res.status(201).json({ paymentSessionId: cashfreeOrder.payment_session_id });
-            } catch (cashfreeError) {
-                console.error('Error creating Cashfree order:', cashfreeError);
-                // If Cashfree order creation fails, you might want to revert the MongoDB order or mark it as failed
-                order.status = 'failed';
-                await order.save();
-                return res.status(500).json({ error: 'Payment Gateway Error', details: cashfreeError.message });
-            }
+        // Define a maximum allowed amount for Cashfree orders (e.g., 100,000 INR)
+        const MAX_CASHFREE_AMOUNT = 100000; // This should be configured based on actual Cashfree limits
+
+        // Round totalAmount to two decimal places as Cashfree might expect fixed-decimal values
+        const roundedTotalAmount = parseFloat(totalAmount.toFixed(2));
+
+        if (roundedTotalAmount > MAX_CASHFREE_AMOUNT) {
+            return res.status(400).json({ error: 'Payment Gateway Error', details: `Order amount ${roundedTotalAmount} exceeds the maximum allowed limit of ${MAX_CASHFREE_AMOUNT}.` });
         }
 
-        return res.status(201).json({ paymentSessionId: cashfreeOrder.payment_session_id });
+        try {
+            console.log(`Attempting to create Cashfree order for amount: ${roundedTotalAmount}`);
+            // Generate a temporary order ID for Cashfree, as the actual MongoDB order is not created yet
+            const tempCashfreeOrderId = `${userId}-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+            const cashfreeOrder = await createCashfreeOrder(
+                tempCashfreeOrderId,
+                roundedTotalAmount,
+                customerDetails
+            );
+            return res.status(201).json({ paymentSessionId: cashfreeOrder.payment_session_id, tempOrderId: tempCashfreeOrderId });
+        } catch (cashfreeError) {
+            console.error('Error creating Cashfree payment session:', cashfreeError);
+            return res.status(500).json({ error: 'Payment Gateway Error', details: cashfreeError.message });
+        }
     } catch (error) {
-        console.error('Error creating order:', error);
-        if (error.message.includes("Product with ID") || error.message.includes("Invalid product ID format")) {
-            return res.status(400).json({ error: "Bad Request", details: error.message });
-        }
-        res.status(500).json({ error: 'Internal Server Error', details: 'Database error during order creation' });
+        console.error('Error in payment session creation:', error);
+        res.status(500).json({ error: 'Internal Server Error', details: 'Database error during payment session creation' });
     }
 });
 
@@ -164,6 +173,7 @@ router.get('/details/:orderId', authMiddleware.protect, async (req, res) => {
     try {
         const { orderId } = req.params;
         // Validate orderId format before querying
+        console.log(orderId)
         if (!mongoose.Types.ObjectId.isValid(orderId)) {
             return res.status(404).json({ message: 'Order not found or invalid ID format' });
         }
@@ -187,6 +197,60 @@ router.get('/details/:orderId', authMiddleware.protect, async (req, res) => {
     } catch (error) {
         console.error('Error fetching order details:', error);
         res.status(500).json({ message: 'Server error' });
+    }
+});
+
+// GET /api/orders/verify-payment/:orderId - Verify payment details for a specific order
+router.get('/verify-payment/:orderId', authMiddleware.protect, async (req, res) => {
+    try {
+        const { orderId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(orderId)) {
+            return res.status(400).json({ error: 'Bad Request', details: 'Invalid order ID format.' });
+        }
+
+        const order = await Order.findById(orderId);
+
+        if (!order) {
+            return res.status(404).json({ error: 'Not Found', details: 'Order not found.' });
+        }
+
+        // Optional: Add authorization check to ensure the requesting user is the owner of the order
+        const orderUserId = order.userId ? order.userId.toString() : null;
+        if (!req.user || !orderUserId || req.user.id !== orderUserId) {
+            return res.status(403).json({ message: 'Access denied. You can only verify your own order details.' });
+        }
+
+        if (order.paymentMethod === 'COD') {
+            return res.status(200).json({ message: 'COD order, no external payment verification needed.', order });
+        }
+
+        if (!order.paymentSessionId) {
+            return res.status(400).json({ error: 'Bad Request', details: 'Order does not have a payment session ID for verification.' });
+        }
+
+        try {
+            const cashfreeDetails = await getCashfreeOrderDetails(order._id); // Assuming Cashfree orderId is stored in paymentSessionId
+            
+            // Compare cashfreeDetails.order_status with order.status and update if necessary
+            if (cashfreeDetails.order_status === 'PAID' && order.status !== 'confirmed') {
+                order.status = 'confirmed';
+                await order.save();
+            } else if (cashfreeDetails.order_status === 'FAILED' && order.status !== 'failed') {
+                order.status = 'failed';
+                await order.save();
+            }
+            // Add other status mappings as needed (e.g., 'PENDING' to 'pending')
+
+            return res.status(200).json({ order, cashfreeDetails });
+        } catch (cashfreeError) {
+            console.error('Error verifying Cashfree payment:', cashfreeError);
+            return res.status(500).json({ error: 'Payment Gateway Error', details: cashfreeError.message });
+        }
+
+    } catch (error) {
+        console.error('Error verifying order payment:', error);
+        res.status(500).json({ error: 'Internal Server Error', details: 'Database error during order payment verification' });
     }
 });
 

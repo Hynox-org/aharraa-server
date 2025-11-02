@@ -54,6 +54,49 @@ const createCashfreeOrder = async (orderId, orderAmount, customerDetails) => {
   }
 };
 
+const getCashfreeOrderDetails = async (orderId) => {
+  let cashfreeBaseUrl;
+  if (process.env.NODE_ENV === 'production') {
+    cashfreeBaseUrl = 'https://api.cashfree.com';
+  } else {
+    cashfreeBaseUrl = 'https://sandbox.cashfree.com';
+  }
+
+  const url = `${cashfreeBaseUrl}/pg/orders/${orderId}`;
+  const xApiVersion = process.env.CASHFREE_API_VERSION || "2022-09-01";
+  const xClientId = process.env.CASHFREE_CLIENT_ID;
+  const xClientSecret = process.env.CASHFREE_CLIENT_SECRET;
+
+  if (!xClientId || !xClientSecret) {
+    throw new Error("Cashfree API keys are not configured.");
+  }
+
+  const options = {
+    method: "GET",
+    headers: {
+      "x-api-version": xApiVersion,
+      "x-client-id": xClientId,
+      "x-client-secret": xClientSecret,
+      "Content-Type": "application/json",
+    },
+  };
+
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+
+    if (response.ok) {
+      return data;
+    } else {
+      throw new Error(`Cashfree API error: ${data.message || "Unknown error"}`);
+    }
+  } catch (error) {
+    console.error("Error fetching Cashfree order details:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   createCashfreeOrder,
+  getCashfreeOrderDetails,
 };
