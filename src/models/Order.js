@@ -12,7 +12,7 @@ const OrderItemSchema = new mongoose.Schema({
   price: { type: Number, required: true },
   mealName: { type: String },
   planName: { type: String },
-  vendorName: { type: String },
+  vendorId: { type: String },
 }, { _id: false });
 
 const OrderSchema = new mongoose.Schema({
