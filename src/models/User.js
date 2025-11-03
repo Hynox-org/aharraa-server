@@ -6,6 +6,29 @@ const UserSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String }, // Password will be handled by Supabase, not strictly required in MongoDB
   supabaseId: { type: String, unique: true, sparse: true }, // Supabase user ID
+  fullName: { type: String },
+  phoneNumber: { type: String },
+  breakfastDeliveryLocation: {
+    street: { type: String },
+    state: { type: String },
+    pincode: { type: String },
+    lat: { type: Number },
+    lon: { type: Number },
+  },
+  lunchDeliveryLocation: {
+    street: { type: String },
+    state: { type: String },
+    pincode: { type: String },
+    lat: { type: Number },
+    lon: { type: Number },
+  },
+  dinnerDeliveryLocation: {
+    street: { type: String },
+    state: { type: String },
+    pincode: { type: String },
+    lat: { type: Number },
+    lon: { type: Number },
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

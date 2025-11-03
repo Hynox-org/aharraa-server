@@ -17,6 +17,7 @@ const accompanimentRoutes = require('./routes/accompaniments');
 const cartRoutes = require('./routes/cart');
 const orderRoutes = require('./routes/orders');
 const deliveryAddressRoutes = require('./routes/deliveryAddresses');
+const profileRoutes = require('./routes/profile');
 
 const app = express();
 
@@ -70,6 +71,7 @@ app.use('/api/accompaniments', accompanimentRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', deliveryAddressRoutes);
+app.use('/api/users', profileRoutes);
 
 app.get('/', (req, res) => {
   res.json({ ok: true, message: 'Aharraa server running' });
