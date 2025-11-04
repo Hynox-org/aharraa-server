@@ -18,6 +18,14 @@ const loginSchema = Joi.object({
   password: Joi.string().required(),
 });
 
+const forgotPasswordSchema = Joi.object({
+  email: Joi.string().email().required(),
+});
+
+const resetPasswordSchema = Joi.object({
+  newPassword: Joi.string().min(8).required()
+});
+
 /**
  * @openapi
  * /api/auth/register:
@@ -199,6 +207,81 @@ router.post("/signin", async (req, res) => {
 
 /**
  * @openapi
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Request a password reset link
+ *     tags:
+ *       - Auth
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: If a user with the provided email exists, a password reset link has been sent.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Invalid email format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { error: validationError } = forgotPasswordSchema.validate(req.body);
+    if (validationError) {
+      return res.status(400).json({ message: validationError.details[0].message });
+    }
+
+    const { email } = req.body;
+    const redirectUrl = process.env.SUPABASE_PASSWORD_RESET_REDIRECT_URL || 'http://localhost:3000/reset-password';
+
+    const { error: supabaseError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    });
+
+    if (supabaseError) {
+      console.error("Supabase password reset error:", supabaseError);
+      // Return generic success message even if user doesn't exist for security reasons
+      return res.status(200).json({ message: "If a user with that email exists, a password reset link has been sent." });
+    }
+
+    return res.status(200).json({ message: "If a user with that email exists, a password reset link has been sent." });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * @openapi
  * /api/auth/validate-token:
  *   get:
  *     summary: Validate the user's access token and return basic user details.
@@ -372,4 +455,111 @@ router.get("/callback", async (req, res) => {
   return res.status(400).json({ message: "OAuth callback failed: No code provided." });
 });
 
+/**
+ * @openapi
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Update user password with a valid reset token
+ *     tags:
+ *       - Auth
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - password
+ *             properties:
+ *               password:
+ *                 type: string
+ *                 minLength: 8
+ *     responses:
+ *       200:
+ *         description: Password updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Invalid password format or missing token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: Invalid or expired token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { error: validationError } = resetPasswordSchema.validate(req.body);
+    if (validationError) {
+      return res.status(400).json({ message: validationError.details[0].message });
+    }
+
+    // ✅ Get token from Authorization header (NOT from body)
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: "Authorization token required" });
+    }
+
+    // ✅ Extract token from "Bearer <token>"
+    const token = authHeader.split(' ')[1];
+    
+    console.log('🔑 Token received:', token?.substring(0, 50) + '...');
+
+    // ✅ Verify token with Supabase
+    const { data: supabaseUser, error: getUserError } = await supabase.auth.getUser(token);
+
+    if (getUserError || !supabaseUser || !supabaseUser.user) {
+      console.error("Supabase getUser error:", getUserError);
+      return res.status(401).json({ message: "Invalid or expired token" });
+    }
+
+    const { newPassword } = req.body;
+
+    console.log('👤 Updating password for user:', supabaseUser.user.email);
+
+    // ✅ Update user password using Supabase admin client
+    const { error: updateError } = await supabase.auth.admin.updateUserById(
+      supabaseUser.user.id,
+      { password: newPassword }
+    );
+
+    if (updateError) {
+      console.error("Supabase password update error:", updateError);
+      return res.status(500).json({ message: "Failed to update password" });
+    }
+
+    return res.status(200).json({ message: "Password updated successfully" });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
 module.exports = router;
