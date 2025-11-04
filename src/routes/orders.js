@@ -20,25 +20,61 @@ const addressSchema = Joi.object({
 });
 
 // Joi schema for order item
-const orderItemSchema = Joi.object({
-  productId: Joi.string().required(), // Allow any string at Joi level, validation for ObjectId will be done in the route handler
+const personDetailsSchema = Joi.object({
+  name: Joi.string().required(),
+  phoneNumber: Joi.string().required(),
+});
+
+const checkoutItemSchema = Joi.object({
+  id: Joi.string().required(), // Unique ID for the checkout item (from CartItem)
+  meal: Joi.object({
+    id: Joi.string().required(),
+    name: Joi.string().required(),
+    // Add other meal properties if needed for validation
+  }).required(),
+  plan: Joi.object({
+    id: Joi.string().required(),
+    name: Joi.string().required(),
+    // Add other plan properties if needed for validation
+  }).required(),
   quantity: Joi.number().integer().min(1).required(),
-  price: Joi.number().min(0).required(),
+  personDetails: Joi.array().items(personDetailsSchema).optional(), // Optional array of person details
+  startDate: Joi.string().isoDate().required(),
+  endDate: Joi.string().isoDate().required(),
+  itemTotalPrice: Joi.number().min(0).required(),
+  vendor: Joi.object({
+    id: Joi.string().required(),
+    name: Joi.string().required(),
+    // Add other vendor properties if needed for validation
+  }).required(),
+});
+
+const deliveryAddressCategorySchema = Joi.object({
+  street: Joi.string().required(),
+  city: Joi.string().required(),
+  zip: Joi.string().required(),
+});
+
+const checkoutDataSchema = Joi.object({
+  id: Joi.string().required(), // Unique ID for the checkout session/order
+  userId: Joi.string().required(),
+  items: Joi.array().items(checkoutItemSchema).min(1).required(),
+  deliveryAddresses: Joi.object({
+    Breakfast: deliveryAddressCategorySchema.optional(),
+    Lunch: deliveryAddressCategorySchema.optional(),
+    Dinner: deliveryAddressCategorySchema.optional(),
+  }).required(),
+  totalPrice: Joi.number().min(0).required(),
+  checkoutDate: Joi.string().isoDate().required(),
 });
 
 // Joi schema for order creation
 const orderSchema = Joi.object({
   userId: Joi.string().required(),
-  items: Joi.array().items(orderItemSchema).min(1).required(),
-  shippingAddress: addressSchema.required(),
-  billingAddress: addressSchema.required(),
+  checkoutData: checkoutDataSchema.required(),
   paymentMethod: Joi.string().valid("COD", "CC", "UPI").required(),
   totalAmount: Joi.number().min(0).required(),
   currency: Joi.string().required(),
-  deliveryAddresses: Joi.object()
-    .pattern(Joi.string(), addressSchema)
-    .min(1)
-    .required(),
 });
 
 // POST /api/orders - Create a new order (for COD payments or after successful external payment)
@@ -74,17 +110,6 @@ router.post("/", authMiddleware.protect, async (req, res) => {
 router.post("/payment", authMiddleware.protect, async (req, res) => {
   let order; // Declare order here so it's accessible in catch blocks
   try {
-    const {
-      userId,
-      items,
-      shippingAddress,
-      billingAddress,
-      paymentMethod,
-      totalAmount,
-      currency,
-      deliveryAddresses,
-    } = req.body;
-
     const { error } = orderSchema.validate(req.body);
     if (error) {
       return res
@@ -95,42 +120,45 @@ router.post("/payment", authMiddleware.protect, async (req, res) => {
         });
     }
 
-    // Populate item details (mealName, planName, vendorName)
-    const populatedItems = await Promise.all(
-      items.map(async (item) => {
-        if (!mongoose.Types.ObjectId.isValid(item.productId)) {
-          throw new Error(`Invalid product ID format: ${item.productId}`);
-        }
-        const meal = await Meal.findById(item.productId);
-        if (!meal) {
-          throw new Error(`Product with ID ${item.productId} not found.`);
-        }
-
-        const plan = await Plan.findById(meal.plan);
-        const vendor = await Vendor.findById(meal.vendorId);
-
-        return {
-          productId: item.productId,
-          quantity: item.quantity,
-          price: item.price,
-          mealName: meal.name,
-          planName: plan ? plan.name : undefined,
-          vendorId: vendor ? vendor._id : undefined,
-        };
-      })
-    );
-
-    order = new Order({
+    const {
       userId,
-      items: populatedItems,
-      shippingAddress,
-      billingAddress,
+      checkoutData,
       paymentMethod,
       totalAmount,
       currency,
-      orderDate: new Date(),
+    } = req.body;
+
+    // Map checkoutData items to OrderItemSchema
+    const orderItems = checkoutData.items.map((item) => ({
+      id: item.id,
+      meal: {
+        _id: item.meal.id,
+        name: item.meal.name,
+      },
+      plan: {
+        _id: item.plan.id,
+        name: item.plan.name,
+      },
+      quantity: item.quantity,
+      personDetails: item.personDetails,
+      startDate: new Date(item.startDate),
+      endDate: new Date(item.endDate),
+      itemTotalPrice: item.itemTotalPrice,
+      vendor: {
+        _id: item.vendor.id,
+        name: item.vendor.name,
+      },
+    }));
+
+    order = new Order({
+      userId: checkoutData.userId,
+      items: orderItems,
+      paymentMethod,
+      totalAmount: checkoutData.totalPrice,
+      currency, // Assuming currency is still passed separately or derived
+      orderDate: new Date(checkoutData.checkoutDate),
       status: "pending", // Initial status before payment gateway interaction
-      deliveryAddresses,
+      deliveryAddresses: checkoutData.deliveryAddresses,
     });
 
     await order.save(); // Save the order to get its _id
@@ -210,25 +238,54 @@ router.post("/payment", authMiddleware.protect, async (req, res) => {
   }
 });
 
-// GET /api/orders/:userId - Get all orders for a specific user
-router.get("/:userId", authMiddleware.protect, async (req, res) => {
+// GET /api/orders - Get all orders for the authenticated user
+router.get("/", authMiddleware.protect, async (req, res) => {
   try {
-    const { userId } = req.params;
-
-    // Optional: Add authorization check to ensure the requesting user is the owner of the orders
-    if (!req.user || req.user.id !== userId) {
-      return res
-        .status(403)
-        .json({ message: "Access denied. You can only view your own orders." });
-    }
+    const userId = req.user.id; // Get userId from authenticated user
 
     const orders = await Order.find({ userId: userId })
-      .populate("items.productId")
+      .populate("items.meal._id") // Populate the meal details
+      .populate("items.plan._id") // Populate the plan details
+      .populate("items.vendor._id") // Populate the vendor details
       .sort({ orderDate: -1 });
 
     res.status(200).json(orders);
   } catch (error) {
     console.error("Error fetching user orders:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// PUT /api/orders/:orderId - Update an order by ID (for users)
+router.put("/:orderId", authMiddleware.protect, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const userId = req.user.id; // Get userId from authenticated user
+    const { status } = req.body; // Only allow status to be updated by user for now
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: "Invalid order ID format" });
+    }
+
+    const order = await Order.findOne({ _id: orderId, userId: userId });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found or not authorized to update" });
+    }
+
+    // Allow users to cancel their own orders if the status is 'pending' or 'confirmed'
+    if (status === "cancelled" && (order.status === "pending" || order.status === "confirmed")) {
+      order.status = "cancelled";
+    } else {
+      return res.status(400).json({ message: "Invalid status update" });
+    }
+
+    order.updatedAt = new Date();
+    await order.save();
+
+    res.status(200).json(order);
+  } catch (error) {
+    console.error("Error updating order:", error);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -245,7 +302,10 @@ router.get("/details/:orderId", authMiddleware.protect, async (req, res) => {
         .json({ message: "Order not found or invalid ID format" });
     }
 
-    const order = await Order.findById(orderId).populate("items.productId"); // Changed from items.meal to items.productId
+    const order = await Order.findById(orderId)
+      .populate("items.meal._id")
+      .populate("items.plan._id")
+      .populate("items.vendor._id");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
