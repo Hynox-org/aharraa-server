@@ -261,7 +261,7 @@ router.post("/forgot-password", async (req, res) => {
     }
 
     const { email } = req.body;
-    const redirectUrl = process.env.SUPABASE_PASSWORD_RESET_REDIRECT_URL || 'http://localhost:3000/reset-password';
+    const redirectUrl = process.env.SUPABASE_PASSWORD_RESET_REDIRECT_URL || 'http://localhost:3000/auth/reset-password';
 
     const { error: supabaseError } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: redirectUrl,
