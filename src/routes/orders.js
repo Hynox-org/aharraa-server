@@ -77,6 +77,24 @@ const orderSchema = Joi.object({
   currency: Joi.string().required(),
 });
 
+// Joi schema for order update
+const orderUpdateSchema = Joi.object({
+  status: Joi.string().valid("cancelled", "delivered", "pending", "confirmed", "failed").optional(), // Allow more status updates, but carefully
+  deliveryAddresses: Joi.object({
+    Breakfast: deliveryAddressCategorySchema.optional(),
+    Lunch: deliveryAddressCategorySchema.optional(),
+    Dinner: deliveryAddressCategorySchema.optional(),
+  }).optional(),
+  items: Joi.array().items(Joi.object({
+    id: Joi.string().required(), // ID of the specific order item to update
+    startDate: Joi.string().isoDate().optional(),
+    endDate: Joi.string().isoDate().optional(),
+    personDetails: Joi.array().items(personDetailsSchema).optional(),
+  })).optional(),
+  skippedDate: Joi.string().isoDate().optional(), // New field for skipping a date
+  newEndDate: Joi.string().isoDate().optional(), // New field for updating the end date
+}).min(1); // At least one field must be present for update
+
 // POST /api/orders - Create a new order (for COD payments or after successful external payment)
 router.post("/", authMiddleware.protect, async (req, res) => {
   try {
@@ -261,10 +279,14 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
   try {
     const { orderId } = req.params;
     const userId = req.user.id; // Get userId from authenticated user
-    const { status } = req.body; // Only allow status to be updated by user for now
 
     if (!mongoose.Types.ObjectId.isValid(orderId)) {
       return res.status(400).json({ message: "Invalid order ID format" });
+    }
+
+    const { error, value } = orderUpdateSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({ error: "Bad Request", details: `Validation failed: ${error.details[0].message}` });
     }
 
     const order = await Order.findOne({ _id: orderId, userId: userId });
@@ -273,11 +295,53 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
       return res.status(404).json({ message: "Order not found or not authorized to update" });
     }
 
-    // Allow users to cancel their own orders if the status is 'pending' or 'confirmed'
-    if (status === "cancelled" && (order.status === "pending" || order.status === "confirmed")) {
-      order.status = "cancelled";
-    } else {
-      return res.status(400).json({ message: "Invalid status update" });
+    // Apply updates based on the validated request body
+    if (value.status) {
+      // Specific logic for status updates
+      if (value.status === "cancelled" && (order.status === "pending" || order.status === "confirmed")) {
+        order.status = value.status;
+      } else if (value.status === "delivered" && order.status === "confirmed") {
+        // Example: Allow setting to delivered if confirmed (might be admin-only in a real app)
+        order.status = value.status;
+      } else {
+        return res.status(400).json({ message: `Invalid status update from ${order.status} to ${value.status}` });
+      }
+    }
+
+    if (value.deliveryAddresses) {
+      order.deliveryAddresses = value.deliveryAddresses;
+    }
+
+    if (value.items && Array.isArray(value.items)) {
+      value.items.forEach(updatedItem => {
+        const existingItem = order.items.id(updatedItem.id); // Assuming order.items is a Mongoose subdocument array
+        if (existingItem) {
+          if (updatedItem.startDate) {
+            existingItem.startDate = new Date(updatedItem.startDate);
+          }
+          if (updatedItem.endDate) {
+            existingItem.endDate = new Date(updatedItem.endDate);
+          }
+          if (updatedItem.personDetails) {
+            existingItem.personDetails = updatedItem.personDetails;
+          }
+        }
+      });
+    }
+
+    // Handle skippedDate
+    if (value.skippedDate) {
+      if (!order.skippedDates) {
+        order.skippedDates = [];
+      }
+      order.skippedDates.push(new Date(value.skippedDate));
+    }
+
+    // Handle newEndDate for all items
+    if (value.newEndDate) {
+      order.items.forEach(item => {
+        item.endDate = new Date(value.newEndDate);
+      });
     }
 
     order.updatedAt = new Date();

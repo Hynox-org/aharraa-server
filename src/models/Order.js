@@ -47,7 +47,8 @@ const OrderSchema = new mongoose.Schema({
   paymentSessionId: { type: String },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
-  deliveryAddresses: { type: Map, of: AddressSchema, required: true }
+  deliveryAddresses: { type: Map, of: AddressSchema, required: true },
+  skippedDates: [{ type: Date }]
 });
 
 module.exports = mongoose.model('Order', OrderSchema);
