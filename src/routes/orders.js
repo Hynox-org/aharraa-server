@@ -165,14 +165,18 @@ router.post("/webhook", async (req, res) => {
         // Send Order Confirmation Email to User
         if (user && user.email) {
           const userEmailContent = getUserOrderConfirmationEmail(order, user, vendors);
-          await sendEmail(
-            user.email,
-            `Order #${order._id} Confirmation - Aharraa`,
-            userEmailContent.text,
-            userEmailContent.html,
-            [{ filename: `invoice_${order._id}.pdf`, content: invoicePdfBuffer, contentType: 'application/pdf' }]
-          );
-          console.log(`Order confirmation email sent to user ${user.email} for order ${order._id}`);
+          try {
+            await sendEmail(
+              user.email,
+              `Order #${order._id} Confirmation - Aharraa`,
+              userEmailContent.text,
+              userEmailContent.html,
+              [{ filename: `invoice_${order._id}.pdf`, content: invoicePdfBuffer, contentType: 'application/pdf' }]
+            );
+            console.log(`Order confirmation email sent to user ${user.email} for order ${order._id}`);
+          } catch (emailError) {
+            console.error(`Failed to send order confirmation email to user ${user.email} for order ${order._id}:`, emailError.message);
+          }
         } else {
           console.warn(`User email not available for order ${order._id}, skipping user email.`);
         }
@@ -181,13 +185,17 @@ router.post("/webhook", async (req, res) => {
         for (const vendor of vendors) {
           if (vendor.email) {
             const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor);
-            await sendEmail(
-              vendor.email,
-              `New Order #${order._id} Notification - Aharraa`,
-              vendorEmailContent.text,
-              vendorEmailContent.html
-            );
-            console.log(`Order notification email sent to vendor ${vendor.email} for order ${order._id}`);
+            try {
+              await sendEmail(
+                vendor.email,
+                `New Order #${order._id} Notification - Aharraa`,
+                vendorEmailContent.text,
+                vendorEmailContent.html
+              );
+              console.log(`Order notification email sent to vendor ${vendor.email} for order ${order._id}`);
+            } catch (emailError) {
+              console.error(`Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`, emailError.message);
+            }
           } else {
             console.warn(`Vendor email not available for vendor ${vendor._id}, skipping vendor email.`);
           }

@@ -16,21 +16,23 @@ const transporter = nodemailer.createTransport({
 });
 
 // Function to send an email
-const sendEmail = async (to, subject, htmlContent, attachments = []) => {
+const sendEmail = async (to, subject, textContent, htmlContent, attachments = []) => {
   try {
     const mailOptions = {
       from: process.env.EMAIL_FROM,
       to,
       subject,
-      html: htmlContent,
+      text: textContent, // Use 'text' for plain text content
+      html: htmlContent, // Use 'html' for HTML content
       attachments,
     };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${to} with subject: ${subject}`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent to ${to} with subject: ${subject}. Message ID: ${info.messageId}, Accepted: ${info.accepted}, Rejected: ${info.rejected}`);
   } catch (error) {
-    console.error(`Error sending email to ${to}:`, error);
-    throw new Error(`Failed to send email: ${error.message}`);
+    console.error(`Error sending email to ${to} with subject "${subject}":`, error);
+    // Re-throw the error to be handled by the caller
+    throw new Error(`Failed to send email to ${to}: ${error.message}`);
   }
 };
 
