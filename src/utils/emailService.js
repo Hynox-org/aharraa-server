@@ -2,11 +2,16 @@ const nodemailer = require("nodemailer");
 
 // Configure the email transporter
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+    pass: process.env.EMAIL_PASS
   },
+  pool: true,              // Enable connection pooling
+  maxConnections: 5,       // Limit concurrent connections
+  maxMessages: 100,        // Messages per connection
+  rateDelta: 1000,         // Time between messages (ms)
+  rateLimit: 5             // Max emails per rateDelta
 });
 
 // Function to send an email
