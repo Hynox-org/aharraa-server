@@ -6,6 +6,22 @@ const getUserOrderConfirmationEmail = (order, user) => {
         <td>${item.meal.name} (${item.plan.name})</td>
         <td>${item.quantity}</td>
         <td>₹${item.itemTotalPrice}</td>
+        <td>${item.vendor.name}</td>
+        <td>
+          ${
+            item.personDetails && item.personDetails.length > 0
+              ? `<ul style="margin:0;padding-left:16px;">${item.personDetails.map(p => `<li>${p.name} (${p.phoneNumber})</li>`).join('')}</ul>`
+              : 'N/A'
+          }
+        </td>
+        <td>${new Date(item.startDate).toLocaleDateString()} - ${new Date(item.endDate).toLocaleDateString()}</td>
+        <td>
+          ${
+            item.skippedDates && item.skippedDates.length > 0
+              ? `<ul style="margin:0;padding-left:16px;">${item.skippedDates.map(d => `<li>${new Date(d).toLocaleDateString()}</li>`).join('')}</ul>`
+              : 'N/A'
+          }
+        </td>
       </tr>
     `;
   });
@@ -62,13 +78,33 @@ const getUserOrderConfirmationEmail = (order, user) => {
                 <th>Item</th>
                 <th>Quantity</th>
                 <th>Price</th>
+                <th>Vendor</th>
+                <th>Person Details</th>
+                <th>Delivery Dates</th>
+                <th>Skipped Dates</th>
               </tr>
             </thead>
             <tbody>
               ${itemsHtml}
             </tbody>
           </table>
-          <p><strong>Total Amount: ₹${order.totalAmount}</strong></p>
+          <p><strong>Total Amount: ₹${order.totalAmount} ${order.currency}</strong></p>
+          <p><strong>Payment Method: ${order.paymentMethod}</strong></p>
+          <p><strong>Order Date: ${new Date(order.orderDate).toLocaleDateString()}</strong></p>
+          <p><strong>Order Status: ${order.status}</strong></p>
+          ${order.paymentSessionId ? `<p><strong>Payment Session ID: ${order.paymentSessionId}</strong></p>` : ''}
+          <p><strong>Order Created At: ${new Date(order.createdAt).toLocaleString()}</strong></p>
+          <p><strong>Order Last Updated At: ${new Date(order.updatedAt).toLocaleString()}</strong></p>
+          <p><strong>Delivery Address:</strong></p>
+          <p>
+            ${Array.from(order.deliveryAddresses || new Map()).map(([category, address]) => {
+                const plainAddress = address.toObject ? address.toObject() : address;
+                if (plainAddress && plainAddress.street && plainAddress.city && plainAddress.zip) {
+                    return `<strong>${category}:</strong> ${plainAddress.street}, ${plainAddress.city}, ${plainAddress.zip}<br>`;
+                }
+                return '';
+            }).join('')}
+          </p>
           <p>We’ll notify you when your order is out for delivery. Thank you for choosing Aharraa!</p>
         </div>
         <div class="footer">
@@ -162,6 +198,13 @@ const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
           </table>
           <p><strong>Customer Name: ${order.userId.name || 'N/A'}</strong></p>
           <p><strong>Customer Email: ${order.userId.email || 'N/A'}</strong></p>
+          <p><strong>Total Amount: ₹${order.totalAmount} ${order.currency}</strong></p>
+          <p><strong>Payment Method: ${order.paymentMethod}</strong></p>
+          <p><strong>Order Date: ${new Date(order.orderDate).toLocaleDateString()}</strong></p>
+          <p><strong>Order Status: ${order.status}</strong></p>
+          ${order.paymentSessionId ? `<p><strong>Payment Session ID: ${order.paymentSessionId}</strong></p>` : ''}
+          <p><strong>Order Created At: ${new Date(order.createdAt).toLocaleString()}</strong></p>
+          <p><strong>Order Last Updated At: ${new Date(order.updatedAt).toLocaleString()}</strong></p>
           <p><strong>Delivery Address:</strong></p>
           <p>
             ${Array.from(order.deliveryAddresses || new Map()).map(([category, address]) => {
