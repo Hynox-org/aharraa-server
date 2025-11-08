@@ -103,14 +103,12 @@ const orderUpdateSchema = Joi.object({
 router.post("/", authMiddleware.protect, async (req, res) => {
   try {
     const { orderId } = req.body;
-    console.log(`[Order Confirmation] Received request for orderId: ${orderId}`);
 
     const order = await Order.findById(orderId)
       .populate("userId")
       .populate("items.meal._id")
       .populate("items.plan._id")
       .populate("items.vendor._id");
-    console.log(`[Order Confirmation] Order found: ${order ? order._id : 'none'}`);
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
@@ -118,33 +116,28 @@ router.post("/", authMiddleware.protect, async (req, res) => {
 
     order.status = "confirmed";
     await order.save();
-    console.log(`[Order Confirmation] Order status updated to confirmed for order: ${order._id}`);
 
     const user = await User.findById(order.userId._id);
     if (!user) {
-      console.error(`[Order Confirmation] User with ID ${order.userId._id} not found for order ${order._id}`);
       // Proceed without sending user email if user not found, but log the error
     }
-    console.log(`[Order Confirmation] User found: ${user ? user._id : 'none'}`);
+     console.log(`[Order Confirmation] Order found: ${order ? order : 'none'}`);
+    console.log(`[Order Confirmation] User found: ${user ? user : 'none'}`);
 
     const invoiceFileName = `invoice-${order._id}.pdf`;
 
-    console.log(`[Order Confirmation] Generating PDF invoice for order: ${order._id}`);
     // Generate PDF invoice as a buffer
     const invoiceBuffer = await generateInvoicePdf(order, user);
-    console.log(`[Order Confirmation] PDF invoice generated for order: ${order._id}`);
 
     // Send order confirmation email to user
     if (user) {
       const userEmailContent = getUserOrderConfirmationEmail(order, user);
-      console.log(`[Order Confirmation] Sending user email for order: ${order._id}`);
       await sendEmail(
         user.email,
         `Order Confirmation #${order._id}`,
         userEmailContent,
         [{ content: invoiceBuffer, filename: invoiceFileName, contentType: 'application/pdf' }]
       );
-      console.log(`[Order Confirmation] User email sent for order: ${order._id}`);
     }
 
     // Group order items by vendor
@@ -167,7 +160,8 @@ router.post("/", authMiddleware.protect, async (req, res) => {
         const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor, items);
         console.log(`[Order Confirmation] Sending vendor email for vendor ${vendorId}, order: ${order._id}`);
         await sendEmail(
-          vendor.email,
+          // vendor.email,
+          "parameswaran8803@gmail.com",
           `New Order Notification #${order._id}`,
           vendorEmailContent,
           [{ content: invoiceBuffer, filename: invoiceFileName, contentType: 'application/pdf' }]

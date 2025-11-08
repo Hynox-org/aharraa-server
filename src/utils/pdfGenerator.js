@@ -52,7 +52,7 @@ const generateInvoicePdf = async (order, user) => {
     doc.moveDown();
 
     // Total Amount
-    doc.fontSize(16).text(`Total Amount: $${order.totalAmount}`, { align: 'right' });
+    doc.fontSize(16).text(`Total Amount: ₹${order.totalAmount}`, { align: 'right' });
     doc.moveDown();
 
     // Footer

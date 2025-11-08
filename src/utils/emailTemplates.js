@@ -5,7 +5,7 @@ const getUserOrderConfirmationEmail = (order, user) => {
       <tr>
         <td>${item.meal.name} (${item.plan.name})</td>
         <td>${item.quantity}</td>
-        <td>$${item.itemTotalPrice}</td>
+        <td>₹${item.itemTotalPrice}</td>
       </tr>
     `;
   });
@@ -14,53 +14,72 @@ const getUserOrderConfirmationEmail = (order, user) => {
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Order Confirmation</title>
-        <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { width: 80%; margin: 20px auto; border: 1px solid #ddd; padding: 20px; }
-            .header { background-color: #f4f4f4; padding: 10px; text-align: center; }
-            .content { margin-top: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f4f4f4; }
-            .footer { margin-top: 30px; text-align: center; font-size: 0.9em; color: #777; }
-        </style>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Order Confirmation</title>
+      <style>
+        body {
+          margin:0;padding:0; background:#f8f9fa; font-family:Arial, sans-serif; color:#333;
+        }
+        .container {
+          max-width: 600px; margin: 20px auto; background: #fff; border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 24px;
+        }
+        .header {
+          background: #005fa3; color:#fff; padding: 22px 0; text-align:center; border-radius:8px 8px 0 0;
+        }
+        h2 { margin:0; font-size:1.6em; font-weight:600; }
+        .content { margin-top:20px; padding:0 6px;}
+        table {
+          width:100%; border-collapse:collapse; margin-top:15px;
+        }
+        th, td {
+          padding:10px; border-bottom:1px solid #e4e9ee; text-align:left;
+        }
+        th { background: #efefef; font-size:1em;}
+        .footer {
+          margin-top:28px; text-align: center; font-size:0.95em; color:#777;
+        }
+        @media(max-width:600px){
+          .container { padding:12px; }
+          .header { font-size:1.2em; padding:16px 0; }
+          table, th, td { font-size:0.98em;}
+        }
+      </style>
     </head>
     <body>
-        <div class="container">
-            <div class="header">
-                <h2>Order Confirmation - #${order._id}</h2>
-            </div>
-            <div class="content">
-                <p>Dear ${user.name},</p>
-                <p>Thank you for your order! Your order #${order._id} has been successfully confirmed.</p>
-                <p>Here are your order details:</p>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Item</th>
-                            <th>Quantity</th>
-                            <th>Price</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${itemsHtml}
-                    </tbody>
-                </table>
-                <p><strong>Total Amount: $${order.totalAmount}</strong></p>
-                <p>We will notify you once your order is out for delivery.</p>
-                <p>Thank you for choosing our service!</p>
-            </div>
-            <div class="footer">
-                <p>&copy; ${new Date().getFullYear()} Aharraa. All rights reserved.</p>
-            </div>
+      <div class="container">
+        <div class="header">
+          <h2>Order Confirmation - #${order._id}</h2>
         </div>
+        <div class="content">
+          <p>Dear ${user.name || user.fullname || user.email},</p>
+          <p>Thank you for your order! Your order <strong>#${order._id}</strong> has been successfully confirmed.</p>
+          <p>Order Details:</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Quantity</th>
+                <th>Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          <p><strong>Total Amount: ₹${order.totalAmount}</strong></p>
+          <p>We’ll notify you when your order is out for delivery. Thank you for choosing Aharraa!</p>
+        </div>
+        <div class="footer">
+          &copy; ${new Date().getFullYear()} Aharraa. All rights reserved.
+        </div>
+      </div>
     </body>
     </html>
   `;
 };
+
 
 const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
   let itemsHtml = '';
@@ -69,8 +88,14 @@ const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
       <tr>
         <td>${item.meal.name} (${item.plan.name})</td>
         <td>${item.quantity}</td>
-        <td>$${item.itemTotalPrice}</td>
-        <td>${item.personDetails ? item.personDetails.map(p => p.name).join(', ') : 'N/A'}</td>
+        <td>₹${item.itemTotalPrice}</td>
+        <td>
+          ${
+            item.personDetails && item.personDetails.length > 0
+              ? `<ul style="margin:0;padding-left:16px;">${item.personDetails.map(p => `<li>${p.name} (${p.phoneNumber})</li>`).join('')}</ul>`
+              : 'N/A'
+          }
+        </td>
         <td>${new Date(item.startDate).toLocaleDateString()} - ${new Date(item.endDate).toLocaleDateString()}</td>
       </tr>
     `;
@@ -80,62 +105,85 @@ const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
     <!DOCTYPE html>
     <html lang="en">
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>New Order Notification</title>
-        <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { width: 80%; margin: 20px auto; border: 1px solid #ddd; padding: 20px; }
-            .header { background-color: #f4f4f4; padding: 10px; text-align: center; }
-            .content { margin-top: 20px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f4f4f4; }
-            .footer { margin-top: 30px; text-align: center; font-size: 0.9em; color: #777; }
-        </style>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>New Order Notification</title>
+      <style>
+        body {
+          margin:0;padding:0; background:#f8f9fa; font-family:Arial, sans-serif; color:#333;
+        }
+        .container {
+          max-width:600px; margin:20px auto; background:#fff; border-radius:8px;
+          box-shadow:0 2px 8px rgba(0,0,0,0.05); padding:24px;
+        }
+        .header {
+          background:#007962; color:#fff; padding:22px 0; text-align:center; border-radius:8px 8px 0 0;
+        }
+        .content { margin-top:18px; padding:0 6px;}
+        table {
+          width:100%; border-collapse:collapse; margin-top:14px;
+        }
+        th, td {
+          padding:9px; border-bottom:1px solid #e4e9ee; text-align:left;
+        }
+        th { background:#efefef; font-size:1em;}
+        ul { margin:0 0 7px 0; padding-left:18px; }
+        .footer {
+          margin-top:26px; text-align:center; font-size:0.95em; color:#777;
+        }
+        @media(max-width:600px){
+          .container { padding:12px; }
+          .header { font-size:1.15em; padding:16px 0;}
+          table, th, td { font-size:0.98em;}
+        }
+      </style>
     </head>
     <body>
-        <div class="container">
-            <div class="header">
-                <h2>New Order Notification - Order #${order._id}</h2>
-            </div>
-            <div class="content">
-                <p>Dear ${vendor.name},</p>
-                <p>A new order has been placed that includes items from your menu. Please prepare the following:</p>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Item</th>
-                            <th>Quantity</th>
-                            <th>Price</th>
-                            <th>Person Details</th>
-                            <th>Delivery Dates</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${itemsHtml}
-                    </tbody>
-                </table>
-                <p><strong>Customer Name: ${order.userId.name || 'N/A'}</strong></p>
-                <p><strong>Customer Email: ${order.userId.email || 'N/A'}</strong></p>
-                <p><strong>Delivery Address:</strong></p>
-                <ul>
-                    ${Object.entries(order.deliveryAddresses).map(([category, address]) => `
-                        <li><strong>${category}:</strong> ${address.street}, ${address.city}, ${address.zip}</li>
-                    `).join('')}
-                </ul>
-                <p>Please log in to your dashboard for more details and to manage the order.</p>
-                <p>Thank you,</p>
-                <p>Aharraa Team</p>
-            </div>
-            <div class="footer">
-                <p>&copy; ${new Date().getFullYear()} Aharraa. All rights reserved.</p>
-            </div>
+      <div class="container">
+        <div class="header">
+          <h2>New Order Notification - #${order._id}</h2>
         </div>
+        <div class="content">
+          <p>Dear ${vendor.name},</p>
+          <p>A new order includes items from your menu. Please prepare the following:</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Quantity</th>
+                <th>Price</th>
+                <th>Person Details</th>
+                <th>Delivery Dates</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          <p><strong>Customer Name: ${order.userId.name || 'N/A'}</strong></p>
+          <p><strong>Customer Email: ${order.userId.email || 'N/A'}</strong></p>
+          <p><strong>Delivery Address:</strong></p>
+          <p>
+            ${Array.from(order.deliveryAddresses || new Map()).map(([category, address]) => {
+                const plainAddress = address.toObject ? address.toObject() : address;
+                if (plainAddress && plainAddress.street && plainAddress.city && plainAddress.zip) {
+                    return `<strong>${category}:</strong> ${plainAddress.street}, ${plainAddress.city}, ${plainAddress.zip}<br>`;
+                }
+                return '';
+            }).join('')}
+          </p>
+          <p>Please log in to your dashboard for more details and to manage the order.</p>
+          <p>Thank you,<br/>Aharraa Team</p>
+        </div>
+        <div class="footer">
+          &copy; ${new Date().getFullYear()} Aharraa. All rights reserved.
+        </div>
+      </div>
     </body>
     </html>
   `;
 };
+
 
 module.exports = {
   getUserOrderConfirmationEmail,
