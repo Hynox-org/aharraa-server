@@ -25,6 +25,7 @@ const OrderItemSchema = new mongoose.Schema({
   personDetails: [{ type: PersonDetailsSchema }], // Optional array of person details
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
+  skippedDates: [{ type: Date }], // Add skippedDates to each item
   itemTotalPrice: { type: Number, required: true },
   vendor: {
     _id: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', required: true },
@@ -48,7 +49,6 @@ const OrderSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
   deliveryAddresses: { type: Map, of: AddressSchema, required: true },
-  skippedDates: [{ type: Date }]
 });
 
 module.exports = mongoose.model('Order', OrderSchema);

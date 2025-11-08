@@ -91,8 +91,9 @@ const orderUpdateSchema = Joi.object({
     endDate: Joi.string().isoDate().optional(),
     personDetails: Joi.array().items(personDetailsSchema).optional(),
   })).optional(),
-  skippedDate: Joi.string().isoDate().optional(), // New field for skipping a date
-  newEndDate: Joi.string().isoDate().optional(), // New field for updating the end date
+  itemId: Joi.string().optional(), // Top-level itemId for specific item updates
+  skippedDate: Joi.string().isoDate().optional(), // Top-level skippedDate for a specific item
+  newEndDate: Joi.string().isoDate().optional(), // Top-level newEndDate for a specific item
 }).min(1); // At least one field must be present for update
 
 // POST /api/orders - Create a new order (for COD payments or after successful external payment)
@@ -329,19 +330,23 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
       });
     }
 
-    // Handle skippedDate
-    if (value.skippedDate) {
-      if (!order.skippedDates) {
-        order.skippedDates = [];
+    // Handle top-level itemId, skippedDate, and newEndDate
+    if (value.itemId) {
+      const existingItem = order.items.find((item) => item.id == value.itemId)
+      console.log({existingItem})
+      if (existingItem) {
+        if (value.skippedDate) {
+          if (!existingItem.skippedDates) {
+            existingItem.skippedDates = [];
+          }
+          existingItem.skippedDates.push(new Date(value.skippedDate));
+        }
+        if (value.newEndDate) {
+          existingItem.endDate = new Date(value.newEndDate);
+        }
+      } else {
+        return res.status(404).json({ message: "Order item not found for the provided itemId" });
       }
-      order.skippedDates.push(new Date(value.skippedDate));
-    }
-
-    // Handle newEndDate for all items
-    if (value.newEndDate) {
-      order.items.forEach(item => {
-        item.endDate = new Date(value.newEndDate);
-      });
     }
 
     order.updatedAt = new Date();
