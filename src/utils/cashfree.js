@@ -2,10 +2,10 @@ const { default: fetch } = require("node-fetch");
 
 const createCashfreeOrder = async (orderId, orderAmount, customerDetails) => {
   let cashfreeBaseUrl;
-  if (process.env.NODE_ENV === 'production') {
-    cashfreeBaseUrl = 'https://api.cashfree.com';
+  if (process.env.NODE_ENV === "production") {
+    cashfreeBaseUrl = "https://api.cashfree.com";
   } else {
-    cashfreeBaseUrl = 'https://sandbox.cashfree.com';
+    cashfreeBaseUrl = "https://sandbox.cashfree.com";
   }
 
   const url = process.env.CASHFREE_API_URL || `${cashfreeBaseUrl}/pg/orders`;
@@ -33,8 +33,8 @@ const createCashfreeOrder = async (orderId, orderAmount, customerDetails) => {
       // Add other necessary fields as per Cashfree API documentation
       // For example, order_meta for return_url, notify_url etc.
       order_meta: {
-        return_url:
-          `${process.env.NEXT_FRONTEND_BASE_URL}/order-status/${orderId}`,
+        return_url: `${process.env.NEXT_FRONTEND_BASE_URL}/order-status/${orderId}`,
+        notify_url: `${process.env.BACKEND_BASE_URL}/api/orders/webhook`,
       },
     }),
   };
@@ -56,10 +56,10 @@ const createCashfreeOrder = async (orderId, orderAmount, customerDetails) => {
 
 const getCashfreeOrderDetails = async (orderId) => {
   let cashfreeBaseUrl;
-  if (process.env.NODE_ENV === 'production') {
-    cashfreeBaseUrl = 'https://api.cashfree.com';
+  if (process.env.NODE_ENV === "production") {
+    cashfreeBaseUrl = "https://api.cashfree.com";
   } else {
-    cashfreeBaseUrl = 'https://sandbox.cashfree.com';
+    cashfreeBaseUrl = "https://sandbox.cashfree.com";
   }
 
   const url = `${cashfreeBaseUrl}/pg/orders/${orderId}`;

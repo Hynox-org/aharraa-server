@@ -14,7 +14,10 @@ const {
 } = require("../utils/cashfree");
 const { sendEmail } = require("../utils/emailService"); // Import email service
 const { generateInvoicePdf } = require("../utils/pdfGenerator"); // Import PDF generator
-const { getUserOrderConfirmationEmail, getVendorOrderNotificationEmail } = require("../utils/emailTemplates"); // Import email templates
+const {
+  getUserOrderConfirmationEmail,
+  getVendorOrderNotificationEmail,
+} = require("../utils/emailTemplates"); // Import email templates
 // Joi schema for address
 const addressSchema = Joi.object({
   street: Joi.string().required(),
@@ -82,136 +85,49 @@ const orderSchema = Joi.object({
 
 // Joi schema for order update
 const orderUpdateSchema = Joi.object({
-  status: Joi.string().valid("cancelled", "delivered", "pending", "confirmed", "failed").optional(), // Allow more status updates, but carefully
+  status: Joi.string()
+    .valid("cancelled", "delivered", "pending", "confirmed", "failed")
+    .optional(), // Allow more status updates, but carefully
   deliveryAddresses: Joi.object({
     Breakfast: deliveryAddressCategorySchema.optional(),
     Lunch: deliveryAddressCategorySchema.optional(),
     Dinner: deliveryAddressCategorySchema.optional(),
   }).optional(),
-  items: Joi.array().items(Joi.object({
-    id: Joi.string().required(), // ID of the specific order item to update
-    startDate: Joi.string().isoDate().optional(),
-    endDate: Joi.string().isoDate().optional(),
-    personDetails: Joi.array().items(personDetailsSchema).optional(),
-  })).optional(),
+  items: Joi.array()
+    .items(
+      Joi.object({
+        id: Joi.string().required(), // ID of the specific order item to update
+        startDate: Joi.string().isoDate().optional(),
+        endDate: Joi.string().isoDate().optional(),
+        personDetails: Joi.array().items(personDetailsSchema).optional(),
+      })
+    )
+    .optional(),
   itemId: Joi.string().optional(), // Top-level itemId for specific item updates
   skippedDate: Joi.string().isoDate().optional(), // Top-level skippedDate for a specific item
   newEndDate: Joi.string().isoDate().optional(), // Top-level newEndDate for a specific item
 }).min(1); // At least one field must be present for update
 
-// POST /api/orders - Confirming a new order (for COD payments or after successful external payment)
-router.post("/", authMiddleware.protect, async (req, res) => {
-  try {
-    const { orderId } = req.body;
+router.post("/webhook", async (req, res) => {
+  console.log("Webhook verified:", req.body);
 
-    const order = await Order.findById(orderId)
-      .populate("userId")
-      .populate("items.meal._id")
-      .populate("items.plan._id")
-      .populate("items.vendor._id");
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    order.status = "confirmed";
-    await order.save();
-
-    const user = await User.findById(order.userId._id);
-    if (!user) {
-      // Proceed without sending user email if user not found, but log the error
-    }
-     console.log(`[Order Confirmation] Order found: ${order ? order : 'none'}`);
-    console.log(`[Order Confirmation] User found: ${user ? user : 'none'}`);
-
-    const invoiceFileName = `invoice-${order._id}.pdf`;
-
-    // Generate PDF invoice as a buffer
-    const invoiceBuffer = await generateInvoicePdf(order, user);
-
-    // Send order confirmation email to user
-    if (user) {
-      const userEmailContent = getUserOrderConfirmationEmail(order, user);
-      await sendEmail(
-        user.email,
-        `Order Confirmation #${order._id}`,
-        userEmailContent,
-        [{ content: invoiceBuffer, filename: invoiceFileName, contentType: 'application/pdf' }]
-      );
-    }
-
-    // Group order items by vendor
-    const vendorItemsMap = new Map();
-    for (const item of order.items) {
-      // After populate("items.vendor._id"), item.vendor._id is the populated Vendor document.
-      // We need the _id of that populated document.
-      const vendorId = item.vendor._id._id.toString();
-      if (!vendorItemsMap.has(vendorId)) {
-        vendorItemsMap.set(vendorId, []);
-      }
-      vendorItemsMap.get(vendorId).push(item);
-    }
-
-    // Send emails to vendors
-    for (const [vendorId, items] of vendorItemsMap.entries()) {
-      console.log(`[Order Confirmation] Attempting to find vendor with ID: ${vendorId}`);
-      const vendor = await Vendor.findById(vendorId);
-      if (vendor && vendor.email) {
-        const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor, items);
-        console.log(`[Order Confirmation] Sending vendor email for vendor ${vendorId}, order: ${order._id}`);
-        await sendEmail(
-          vendor.email,
-          `New Order Notification #${order._id}`,
-          vendorEmailContent,
-          [{ content: invoiceBuffer, filename: invoiceFileName, contentType: 'application/pdf' }]
-        );
-        console.log(`[Order Confirmation] Vendor email sent for vendor ${vendorId}, order: ${order._id}`);
-      } else {
-        console.warn(`[Order Confirmation] Vendor with ID ${vendorId} not found or has no email for order ${order._id}`);
-      }
-    }
-
-    res.status(201).json(order);
-    console.log(`[Order Confirmation] Order confirmation complete for order: ${order._id}`);
-  } catch (error) {
-    console.error("[Order Confirmation] Error confirming order and sending emails:", error);
-    if (
-      error.message.includes("Product with ID") ||
-      error.message.includes("Invalid product ID format")
-    ) {
-      return res
-        .status(400)
-        .json({ error: "Bad Request", details: error.message });
-    }
-    res
-      .status(500)
-      .json({
-        error: "Internal Server Error",
-        details: "Database error during order confirmation or email sending",
-      });
-  }
+  // Your business logic here
+  const { type, data } = req.body;
 });
 
-router.post("/payment", authMiddleware.protect, async (req, res) => {
+router.post("/", authMiddleware.protect, async (req, res) => {
   let order; // Declare order here so it's accessible in catch blocks
   try {
     const { error } = orderSchema.validate(req.body);
     if (error) {
-      return res
-        .status(400)
-        .json({
-          error: "Bad Request",
-          details: `Validation failed: ${error.details[0].message}`,
-        });
+      return res.status(400).json({
+        error: "Bad Request",
+        details: `Validation failed: ${error.details[0].message}`,
+      });
     }
 
-    const {
-      userId,
-      checkoutData,
-      paymentMethod,
-      totalAmount,
-      currency,
-    } = req.body;
+    const { userId, checkoutData, paymentMethod, totalAmount, currency } =
+      req.body;
 
     // Map checkoutData items to OrderItemSchema
     const orderItems = checkoutData.items.map((item) => ({
@@ -261,12 +177,10 @@ router.post("/payment", authMiddleware.protect, async (req, res) => {
     if (roundedTotalAmount > MAX_CASHFREE_AMOUNT) {
       order.status = "failed";
       await order.save();
-      return res
-        .status(400)
-        .json({
-          error: "Payment Gateway Error",
-          details: `Order amount ${roundedTotalAmount} exceeds the maximum allowed limit of ${MAX_CASHFREE_AMOUNT}.`,
-        });
+      return res.status(400).json({
+        error: "Payment Gateway Error",
+        details: `Order amount ${roundedTotalAmount} exceeds the maximum allowed limit of ${MAX_CASHFREE_AMOUNT}.`,
+      });
     }
 
     try {
@@ -283,22 +197,18 @@ router.post("/payment", authMiddleware.protect, async (req, res) => {
       order.status = "pending"; // Keep as pending until payment is confirmed by webhook or verification
       await order.save();
 
-      return res
-        .status(201)
-        .json({
-          paymentSessionId: cashfreeOrder.payment_session_id,
-          orderId: order._id,
-        });
+      return res.status(201).json({
+        paymentSessionId: cashfreeOrder.payment_session_id,
+        order: order,
+      });
     } catch (cashfreeError) {
       console.error("Error creating Cashfree payment session:", cashfreeError);
       order.status = "failed";
       await order.save();
-      return res
-        .status(500)
-        .json({
-          error: "Payment Gateway Error",
-          details: cashfreeError.message,
-        });
+      return res.status(500).json({
+        error: "Payment Gateway Error",
+        details: cashfreeError.message,
+      });
     }
   } catch (error) {
     console.error("Error in payment session creation:", error);
@@ -314,12 +224,10 @@ router.post("/payment", authMiddleware.protect, async (req, res) => {
         .status(400)
         .json({ error: "Bad Request", details: error.message });
     }
-    res
-      .status(500)
-      .json({
-        error: "Internal Server Error",
-        details: "Database error during payment session creation",
-      });
+    res.status(500).json({
+      error: "Internal Server Error",
+      details: "Database error during payment session creation",
+    });
   }
 });
 
@@ -353,25 +261,39 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
 
     const { error, value } = orderUpdateSchema.validate(req.body);
     if (error) {
-      return res.status(400).json({ error: "Bad Request", details: `Validation failed: ${error.details[0].message}` });
+      return res
+        .status(400)
+        .json({
+          error: "Bad Request",
+          details: `Validation failed: ${error.details[0].message}`,
+        });
     }
 
     const order = await Order.findOne({ _id: orderId, userId: userId });
 
     if (!order) {
-      return res.status(404).json({ message: "Order not found or not authorized to update" });
+      return res
+        .status(404)
+        .json({ message: "Order not found or not authorized to update" });
     }
 
     // Apply updates based on the validated request body
     if (value.status) {
       // Specific logic for status updates
-      if (value.status === "cancelled" && (order.status === "pending" || order.status === "confirmed")) {
+      if (
+        value.status === "cancelled" &&
+        (order.status === "pending" || order.status === "confirmed")
+      ) {
         order.status = value.status;
       } else if (value.status === "delivered" && order.status === "confirmed") {
         // Example: Allow setting to delivered if confirmed (might be admin-only in a real app)
         order.status = value.status;
       } else {
-        return res.status(400).json({ message: `Invalid status update from ${order.status} to ${value.status}` });
+        return res
+          .status(400)
+          .json({
+            message: `Invalid status update from ${order.status} to ${value.status}`,
+          });
       }
     }
 
@@ -380,7 +302,7 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
     }
 
     if (value.items && Array.isArray(value.items)) {
-      value.items.forEach(updatedItem => {
+      value.items.forEach((updatedItem) => {
         const existingItem = order.items.id(updatedItem.id); // Assuming order.items is a Mongoose subdocument array
         if (existingItem) {
           if (updatedItem.startDate) {
@@ -398,8 +320,8 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
 
     // Handle top-level itemId, skippedDate, and newEndDate
     if (value.itemId) {
-      const existingItem = order.items.find((item) => item.id == value.itemId)
-      console.log({existingItem})
+      const existingItem = order.items.find((item) => item.id == value.itemId);
+      console.log({ existingItem });
       if (existingItem) {
         if (value.skippedDate) {
           if (!existingItem.skippedDates) {
@@ -411,7 +333,9 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
           existingItem.endDate = new Date(value.newEndDate);
         }
       } else {
-        return res.status(404).json({ message: "Order item not found for the provided itemId" });
+        return res
+          .status(404)
+          .json({ message: "Order item not found for the provided itemId" });
       }
     }
 
@@ -451,11 +375,9 @@ router.get("/details/:orderId", authMiddleware.protect, async (req, res) => {
     const orderUserId = order.userId ? order.userId.toString() : null;
 
     if (!req.user || !orderUserId || req.user.id !== orderUserId) {
-      return res
-        .status(403)
-        .json({
-          message: "Access denied. You can only view your own order details.",
-        });
+      return res.status(403).json({
+        message: "Access denied. You can only view your own order details.",
+      });
     }
 
     res.status(200).json(order);
@@ -490,31 +412,23 @@ router.get(
       // Optional: Add authorization check to ensure the requesting user is the owner of the order
       const orderUserId = order.userId ? order.userId.toString() : null;
       if (!req.user || !orderUserId || req.user.id !== orderUserId) {
-        return res
-          .status(403)
-          .json({
-            message:
-              "Access denied. You can only verify your own order details.",
-          });
+        return res.status(403).json({
+          message: "Access denied. You can only verify your own order details.",
+        });
       }
 
       if (order.paymentMethod === "COD") {
-        return res
-          .status(200)
-          .json({
-            message: "COD order, no external payment verification needed.",
-            order,
-          });
+        return res.status(200).json({
+          message: "COD order, no external payment verification needed.",
+          order,
+        });
       }
 
       if (!order.paymentSessionId) {
-        return res
-          .status(400)
-          .json({
-            error: "Bad Request",
-            details:
-              "Order does not have a payment session ID for verification.",
-          });
+        return res.status(400).json({
+          error: "Bad Request",
+          details: "Order does not have a payment session ID for verification.",
+        });
       }
 
       try {
@@ -539,21 +453,17 @@ router.get(
         return res.status(200).json({ order, cashfreeDetails });
       } catch (cashfreeError) {
         console.error("Error verifying Cashfree payment:", cashfreeError);
-        return res
-          .status(500)
-          .json({
-            error: "Payment Gateway Error",
-            details: cashfreeError.message,
-          });
+        return res.status(500).json({
+          error: "Payment Gateway Error",
+          details: cashfreeError.message,
+        });
       }
     } catch (error) {
       console.error("Error verifying order payment:", error);
-      res
-        .status(500)
-        .json({
-          error: "Internal Server Error",
-          details: "Database error during order payment verification",
-        });
+      res.status(500).json({
+        error: "Internal Server Error",
+        details: "Database error during order payment verification",
+      });
     }
   }
 );
