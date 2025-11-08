@@ -160,8 +160,7 @@ router.post("/", authMiddleware.protect, async (req, res) => {
         const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor, items);
         console.log(`[Order Confirmation] Sending vendor email for vendor ${vendorId}, order: ${order._id}`);
         await sendEmail(
-          // vendor.email,
-          "parameswaran8803@gmail.com",
+          vendor.email,
           `New Order Notification #${order._id}`,
           vendorEmailContent,
           [{ content: invoiceBuffer, filename: invoiceFileName, contentType: 'application/pdf' }]
