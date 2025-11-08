@@ -109,10 +109,109 @@ const orderUpdateSchema = Joi.object({
 }).min(1); // At least one field must be present for update
 
 router.post("/webhook", async (req, res) => {
-  console.log("Webhook verified:", req.body);
+  console.log("Webhook received:", req.body);
 
-  // Your business logic here
-  const { type, data } = req.body;
+  const { type, data, event_time } = req.body;
+
+  if (type === "PAYMENT_SUCCESS_WEBHOOK") {
+    try {
+      const { order: orderData, payment: paymentData, customer_details: customerDetailsData } = data;
+
+      const orderId = orderData.order_id;
+      const paymentStatus = paymentData.payment_status;
+      const cfPaymentId = paymentData.cf_payment_id;
+      const paymentTime = paymentData.payment_time;
+      const bankReference = paymentData.bank_reference;
+
+      if (!mongoose.Types.ObjectId.isValid(orderId)) {
+        console.error(`Invalid order ID received in webhook: ${orderId}`);
+        return res.status(400).json({ message: "Invalid order ID format" });
+      }
+
+      const order = await Order.findById(orderId);
+
+      if (!order) {
+        console.error(`Order not found for ID: ${orderId}`);
+        return res.status(404).json({ message: "Order not found" });
+      }
+
+      // Update order status and payment details
+      order.paymentDetails = {
+        cfPaymentId: cfPaymentId,
+        status: paymentStatus,
+        paymentTime: new Date(paymentTime),
+        bankReference: bankReference,
+        method: paymentData.payment_group, // Assuming payment_group is the method
+      };
+
+      if (paymentStatus === "SUCCESS") {
+        order.status = "confirmed";
+        order.paymentConfirmedAt = new Date();
+
+        // Fetch user and vendor details for email and invoice
+        const user = await User.findById(order.userId);
+        if (!user) {
+          console.error(`User not found for order ${orderId}`);
+          // Continue processing, but log the error
+        }
+
+        // Collect all unique vendor IDs from order items
+        const vendorIds = [...new Set(order.items.map(item => item.vendor._id.toString()))];
+        const vendors = await Vendor.find({ '_id': { $in: vendorIds } });
+
+        // Generate Invoice PDF
+        const invoicePdfBuffer = await generateInvoicePdf(order, user, vendors);
+
+        // Send Order Confirmation Email to User
+        if (user && user.email) {
+          const userEmailContent = getUserOrderConfirmationEmail(order, user, vendors);
+          await sendEmail(
+            user.email,
+            `Order #${order._id} Confirmation - Aharraa`,
+            userEmailContent.text,
+            userEmailContent.html,
+            [{ filename: `invoice_${order._id}.pdf`, content: invoicePdfBuffer, contentType: 'application/pdf' }]
+          );
+          console.log(`Order confirmation email sent to user ${user.email} for order ${order._id}`);
+        } else {
+          console.warn(`User email not available for order ${order._id}, skipping user email.`);
+        }
+
+        // Send Order Notification Email to Vendors
+        for (const vendor of vendors) {
+          if (vendor.email) {
+            const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor);
+            await sendEmail(
+              vendor.email,
+              `New Order #${order._id} Notification - Aharraa`,
+              vendorEmailContent.text,
+              vendorEmailContent.html
+            );
+            console.log(`Order notification email sent to vendor ${vendor.email} for order ${order._id}`);
+          } else {
+            console.warn(`Vendor email not available for vendor ${vendor._id}, skipping vendor email.`);
+          }
+        }
+
+      } else if (paymentStatus === "FAILED") {
+        order.status = "failed";
+      } else {
+        // Handle other statuses if necessary, e.g., PENDING, REFUNDED
+        console.log(`Webhook received for order ${orderId} with status: ${paymentStatus}. No status change applied.`);
+      }
+
+      await order.save();
+      console.log(`Order ${orderId} updated to status: ${order.status}`);
+      res.status(200).json({ message: "Webhook processed successfully" });
+
+    } catch (error) {
+      console.error("Error processing PAYMENT_SUCCESS_WEBHOOK:", error);
+      res.status(500).json({ message: "Internal Server Error" });
+    }
+  } else {
+    console.log(`Received webhook of type: ${type}. No specific logic implemented for this type.`);
+    res.status(200).json({ message: `Webhook type ${type} received, but not processed.` });
+  }
 });
 
 router.post("/", authMiddleware.protect, async (req, res) => {
