@@ -164,7 +164,7 @@ router.post("/webhook", async (req, res) => {
 
         // Send Order Confirmation Email to User
         if (user && user.email) {
-          const userEmailContent = getUserOrderConfirmationEmail(order, user, vendors);
+          const userEmailContent = getUserOrderConfirmationEmail(order, user);
           try {
             await sendEmail(
               user.email,
@@ -184,7 +184,9 @@ router.post("/webhook", async (req, res) => {
         // Send Order Notification Email to Vendors
         for (const vendor of vendors) {
           if (vendor.email) {
-            const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor);
+            // Filter order items relevant to the current vendor
+            const vendorItems = order.items.filter(item => item.vendor._id.toString() === vendor._id.toString());
+            const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor, vendorItems);
             try {
               await sendEmail(
                 vendor.email,
