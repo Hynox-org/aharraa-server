@@ -9,6 +9,10 @@ const transporter = nodemailer.createTransport({
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
+  // Add timeout, logger, and debug options for better diagnostics
+  timeout: 15000, // 15 seconds
+  logger: true,
+  debug: true,
 });
 
 // Function to send an email
