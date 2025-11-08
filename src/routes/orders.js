@@ -7,11 +7,14 @@ const Order = require("../models/Order");
 const Meal = require("../models/Meal");
 const Plan = require("../models/Plan");
 const Vendor = require("../models/Vendor");
+const User = require("../models/User"); // Import User model
 const {
   createCashfreeOrder,
   getCashfreeOrderDetails,
 } = require("../utils/cashfree");
-
+const { sendEmail } = require("../utils/emailService"); // Import email service
+const { generateInvoicePdf } = require("../utils/pdfGenerator"); // Import PDF generator
+const { getUserOrderConfirmationEmail, getVendorOrderNotificationEmail } = require("../utils/emailTemplates"); // Import email templates
 // Joi schema for address
 const addressSchema = Joi.object({
   street: Joi.string().required(),
@@ -96,19 +99,89 @@ const orderUpdateSchema = Joi.object({
   newEndDate: Joi.string().isoDate().optional(), // Top-level newEndDate for a specific item
 }).min(1); // At least one field must be present for update
 
-// POST /api/orders - Create a new order (for COD payments or after successful external payment)
+// POST /api/orders - Confirming a new order (for COD payments or after successful external payment)
 router.post("/", authMiddleware.protect, async (req, res) => {
   try {
     const { orderId } = req.body;
+    console.log(`[Order Confirmation] Received request for orderId: ${orderId}`);
 
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId)
+      .populate("userId")
+      .populate("items.meal._id")
+      .populate("items.plan._id")
+      .populate("items.vendor._id");
+    console.log(`[Order Confirmation] Order found: ${order ? order._id : 'none'}`);
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
     order.status = "confirmed";
-
     await order.save();
+    console.log(`[Order Confirmation] Order status updated to confirmed for order: ${order._id}`);
+
+    const user = await User.findById(order.userId._id);
+    if (!user) {
+      console.error(`[Order Confirmation] User with ID ${order.userId._id} not found for order ${order._id}`);
+      // Proceed without sending user email if user not found, but log the error
+    }
+    console.log(`[Order Confirmation] User found: ${user ? user._id : 'none'}`);
+
+    const invoiceFileName = `invoice-${order._id}.pdf`;
+
+    console.log(`[Order Confirmation] Generating PDF invoice for order: ${order._id}`);
+    // Generate PDF invoice as a buffer
+    const invoiceBuffer = await generateInvoicePdf(order, user);
+    console.log(`[Order Confirmation] PDF invoice generated for order: ${order._id}`);
+
+    // Send order confirmation email to user
+    if (user) {
+      const userEmailContent = getUserOrderConfirmationEmail(order, user);
+      console.log(`[Order Confirmation] Sending user email for order: ${order._id}`);
+      await sendEmail(
+        user.email,
+        `Order Confirmation #${order._id}`,
+        userEmailContent,
+        [{ content: invoiceBuffer, filename: invoiceFileName, contentType: 'application/pdf' }]
+      );
+      console.log(`[Order Confirmation] User email sent for order: ${order._id}`);
+    }
+
+    // Group order items by vendor
+    const vendorItemsMap = new Map();
+    for (const item of order.items) {
+      // After populate("items.vendor._id"), item.vendor._id is the populated Vendor document.
+      // We need the _id of that populated document.
+      const vendorId = item.vendor._id._id.toString();
+      if (!vendorItemsMap.has(vendorId)) {
+        vendorItemsMap.set(vendorId, []);
+      }
+      vendorItemsMap.get(vendorId).push(item);
+    }
+
+    // Send emails to vendors
+    for (const [vendorId, items] of vendorItemsMap.entries()) {
+      console.log(`[Order Confirmation] Attempting to find vendor with ID: ${vendorId}`);
+      const vendor = await Vendor.findById(vendorId);
+      if (vendor && vendor.email) {
+        const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor, items);
+        console.log(`[Order Confirmation] Sending vendor email for vendor ${vendorId}, order: ${order._id}`);
+        await sendEmail(
+          vendor.email,
+          `New Order Notification #${order._id}`,
+          vendorEmailContent,
+          [{ content: invoiceBuffer, filename: invoiceFileName, contentType: 'application/pdf' }]
+        );
+        console.log(`[Order Confirmation] Vendor email sent for vendor ${vendorId}, order: ${order._id}`);
+      } else {
+        console.warn(`[Order Confirmation] Vendor with ID ${vendorId} not found or has no email for order ${order._id}`);
+      }
+    }
 
     res.status(201).json(order);
+    console.log(`[Order Confirmation] Order confirmation complete for order: ${order._id}`);
   } catch (error) {
-    console.error("Error creating order:", error);
+    console.error("[Order Confirmation] Error confirming order and sending emails:", error);
     if (
       error.message.includes("Product with ID") ||
       error.message.includes("Invalid product ID format")
@@ -121,7 +194,7 @@ router.post("/", authMiddleware.protect, async (req, res) => {
       .status(500)
       .json({
         error: "Internal Server Error",
-        details: "Database error during order creation",
+        details: "Database error during order confirmation or email sending",
       });
   }
 });
