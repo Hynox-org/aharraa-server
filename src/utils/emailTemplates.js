@@ -2,225 +2,191 @@ const getUserOrderConfirmationEmail = (order, user) => {
   let itemsHtml = '';
   order.items.forEach(item => {
     itemsHtml += `
-      <tr>
-        <td>${item.meal.name} (${item.plan.name})</td>
-        <td>${item.quantity}</td>
-        <td>₹${item.itemTotalPrice}</td>
-        <td>${item.vendor.name}</td>
-        <td>
-          ${
-            item.personDetails && item.personDetails.length > 0
-              ? `<ul style="margin:0;padding-left:16px;">${item.personDetails.map(p => `<li>${p.name} (${p.phoneNumber})</li>`).join('')}</ul>`
-              : 'N/A'
-          }
-        </td>
-        <td>${new Date(item.startDate).toLocaleDateString()} - ${new Date(item.endDate).toLocaleDateString()}</td>
-        <td>
-          ${
-            item.skippedDates && item.skippedDates.length > 0
-              ? `<ul style="margin:0;padding-left:16px;">${item.skippedDates.map(d => `<li>${new Date(d).toLocaleDateString()}</li>`).join('')}</ul>`
-              : 'N/A'
-          }
-        </td>
-      </tr>
+      <div style="border:2px solid #034C3C; margin:0 0 2px 0; padding:14px; background:#fff;">
+        <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:8px;">ITEM_${order.items.indexOf(item) + 1}</div>
+        <div style="font-size:16px; font-weight:700; color:#000; text-transform:uppercase; margin-bottom:4px;">${item.meal.name}</div>
+        <div style="font-size:13px; color:#000; margin-bottom:10px;">${item.plan.name} / ${item.vendor.name}</div>
+        <div style="display:flex; gap:30px; flex-wrap:wrap; border-top:1px solid #000; padding-top:10px; margin-top:10px;">
+          <div><span style="font-size:11px; color:#666;">QTY:</span> <span style="font-size:14px; font-weight:700;">${item.quantity}</span></div>
+          <div><span style="font-size:11px; color:#666;">PRICE:</span> <span style="font-size:14px; font-weight:700;">₹${item.itemTotalPrice}</span></div>
+        </div>
+        ${item.personDetails && item.personDetails.length > 0 ? `
+        <div style="background:#034C3C; color:#fff; padding:10px; margin-top:10px;">
+          ${item.personDetails.map(p => `<div style="font-size:12px; margin:3px 0;">${p.name} / ${p.phoneNumber}</div>`).join('')}
+        </div>` : ''}
+        <div style="font-size:11px; color:#000; margin-top:10px; font-family:monospace;">
+          ${new Date(item.startDate).toLocaleDateString()} → ${new Date(item.endDate).toLocaleDateString()}
+        </div>
+      </div>
     `;
   });
 
   return `
     <!DOCTYPE html>
-    <html lang="en">
+    <html>
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Order Confirmation</title>
-      <style>
-        body {
-          margin:0;padding:0; background:#f8f9fa; font-family:Arial, sans-serif; color:#333;
-        }
-        .container {
-          max-width: 600px; margin: 20px auto; background: #fff; border-radius: 8px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.05); padding: 24px;
-        }
-        .header {
-          background: #005fa3; color:#fff; padding: 22px 0; text-align:center; border-radius:8px 8px 0 0;
-        }
-        h2 { margin:0; font-size:1.6em; font-weight:600; }
-        .content { margin-top:20px; padding:0 6px;}
-        table {
-          width:100%; border-collapse:collapse; margin-top:15px;
-        }
-        th, td {
-          padding:10px; border-bottom:1px solid #e4e9ee; text-align:left;
-        }
-        th { background: #efefef; font-size:1em;}
-        .footer {
-          margin-top:28px; text-align: center; font-size:0.95em; color:#777;
-        }
-        @media(max-width:600px){
-          .container { padding:12px; }
-          .header { font-size:1.2em; padding:16px 0; }
-          table, th, td { font-size:0.98em;}
-        }
-      </style>
     </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h2>Order Confirmation - #${order._id}</h2>
+    <body style="margin:0; padding:0; background:#e0e0e0; font-family:Arial,sans-serif;">
+      <div style="max-width:600px; margin:0 auto; padding:0;">
+        
+        <div style="background:#034C3C; color:#fff; padding:24px; border:4px solid #034C3C;">
+          <div style="font-family:monospace; font-size:12px; margin-bottom:4px;">ORDER_CONFIRMATION</div>
+          <div style="font-size:32px; font-weight:900; text-transform:uppercase; letter-spacing:-1px;">CONFIRMED</div>
+          <div style="font-family:monospace; font-size:13px; margin-top:8px;">#${order._id}</div>
         </div>
-        <div class="content">
-          <p>Dear ${user.name || user.fullname || user.email},</p>
-          <p>Thank you for your order! Your order <strong>#${order._id}</strong> has been successfully confirmed.</p>
-          <p>Order Details:</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Quantity</th>
-                <th>Price</th>
-                <th>Vendor</th>
-                <th>Person Details</th>
-                <th>Delivery Dates</th>
-                <th>Skipped Dates</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-          <p><strong>Total Amount: ₹${order.totalAmount} ${order.currency}</strong></p>
-          <p><strong>Payment Method: ${order.paymentMethod}</strong></p>
-          <p><strong>Order Date: ${new Date(order.orderDate).toLocaleDateString()}</strong></p>
-          <p><strong>Order Status: ${order.status}</strong></p>
-          ${order.paymentSessionId ? `<p><strong>Payment Session ID: ${order.paymentSessionId}</strong></p>` : ''}
-          <p><strong>Order Created At: ${new Date(order.createdAt).toLocaleString()}</strong></p>
-          <p><strong>Order Last Updated At: ${new Date(order.updatedAt).toLocaleString()}</strong></p>
-          <p><strong>Delivery Address:</strong></p>
-          <p>
+
+        <div style="background:#fff; border:4px solid #034C3C; border-top:none; padding:24px;">
+          
+          <div style="margin-bottom:20px;">
+            <div style="font-size:14px; color:#000;">USER: ${(user.name || user.fullname || user.email).toUpperCase()}</div>
+          </div>
+
+          <div style="background:#034C3C; color:#fff; padding:16px; margin:20px 0; text-align:center;">
+            <div style="font-size:12px; margin-bottom:4px;">TOTAL_AMOUNT</div>
+            <div style="font-size:36px; font-weight:900;">₹${order.totalAmount}</div>
+          </div>
+
+          <div style="font-family:monospace; font-size:11px; color:#666; margin:20px 0 10px 0;">ORDER_ITEMS</div>
+          ${itemsHtml}
+
+          <div style="border:2px solid #000; padding:16px; margin:20px 0;">
+            <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:12px;">ORDER_DATA</div>
+            <div style="font-size:13px; line-height:2;">
+              <div><span style="font-weight:700;">PAYMENT:</span> ${order.paymentMethod}</div>
+              <div><span style="font-weight:700;">STATUS:</span> ${order.status}</div>
+              <div><span style="font-weight:700;">DATE:</span> ${new Date(order.orderDate).toLocaleDateString()}</div>
+              <div><span style="font-weight:700;">CURRENCY:</span> ${order.currency}</div>
+            </div>
+          </div>
+
+          <div style="border:2px solid #000; padding:16px; margin:20px 0;">
+            <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:12px;">DELIVERY_ADDRESS</div>
             ${Array.from(order.deliveryAddresses || new Map()).map(([category, address]) => {
                 const plainAddress = address.toObject ? address.toObject() : address;
                 if (plainAddress && plainAddress.street && plainAddress.city && plainAddress.zip) {
-                    return `<strong>${category}:</strong> ${plainAddress.street}, ${plainAddress.city}, ${plainAddress.zip}<br>`;
+                    return `<div style="font-size:13px; margin-bottom:8px;">
+                      <div style="font-weight:700; text-transform:uppercase;">${category}</div>
+                      <div>${plainAddress.street}, ${plainAddress.city}, ${plainAddress.zip}</div>
+                    </div>`;
                 }
                 return '';
             }).join('')}
-          </p>
-          <p>We’ll notify you when your order is out for delivery. Thank you for choosing Aharraa!</p>
+          </div>
+
+          <div style="font-size:11px; font-family:monospace; color:#666; margin-top:24px; line-height:1.8;">
+            CREATED: ${new Date(order.createdAt).toLocaleString()}<br>
+            UPDATED: ${new Date(order.updatedAt).toLocaleString()}
+          </div>
+
         </div>
-        <div class="footer">
-          &copy; ${new Date().getFullYear()} Aharraa. All rights reserved.
+
+        <div style="background:#034C3C; color:#fff; padding:20px; text-align:center; border:4px solid #034C3C; border-top:none;">
+          <div style="font-size:11px; font-family:monospace;">AHARRAA_${new Date().getFullYear()}</div>
+          <div style="font-size:11px; font-family:monospace;">DEVELOPED BY HYNOX</div>
         </div>
+
       </div>
     </body>
     </html>
   `;
 };
 
-
 const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
   let itemsHtml = '';
   vendorItems.forEach(item => {
     itemsHtml += `
-      <tr>
-        <td>${item.meal.name} (${item.plan.name})</td>
-        <td>${item.quantity}</td>
-        <td>₹${item.itemTotalPrice}</td>
-        <td>
-          ${
-            item.personDetails && item.personDetails.length > 0
-              ? `<ul style="margin:0;padding-left:16px;">${item.personDetails.map(p => `<li>${p.name} (${p.phoneNumber})</li>`).join('')}</ul>`
-              : 'N/A'
-          }
-        </td>
-        <td>${new Date(item.startDate).toLocaleDateString()} - ${new Date(item.endDate).toLocaleDateString()}</td>
-      </tr>
+      <div style="border:2px solid #034C3C; margin:0 0 2px 0; padding:14px; background:#fff;">
+        <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:8px;">ITEM_${vendorItems.indexOf(item) + 1}</div>
+        <div style="font-size:16px; font-weight:700; color:#000; text-transform:uppercase; margin-bottom:4px;">${item.meal.name}</div>
+        <div style="font-size:13px; color:#000; margin-bottom:10px;">${item.plan.name}</div>
+        <div style="display:flex; gap:30px; flex-wrap:wrap; border-top:1px solid #000; padding-top:10px; margin-top:10px;">
+          <div><span style="font-size:11px; color:#666;">QTY:</span> <span style="font-size:14px; font-weight:700;">${item.quantity}</span></div>
+          <div><span style="font-size:11px; color:#666;">PRICE:</span> <span style="font-size:14px; font-weight:700;">₹${item.itemTotalPrice}</span></div>
+        </div>
+        ${item.personDetails && item.personDetails.length > 0 ? `
+        <div style="background:#034C3C; color:#fff; padding:10px; margin-top:10px;">
+          ${item.personDetails.map(p => `<div style="font-size:12px; margin:3px 0;">${p.name} / ${p.phoneNumber}</div>`).join('')}
+        </div>` : ''}
+        <div style="font-size:11px; color:#000; margin-top:10px; font-family:monospace;">
+          ${new Date(item.startDate).toLocaleDateString()} → ${new Date(item.endDate).toLocaleDateString()}
+        </div>
+      </div>
     `;
   });
 
   return `
     <!DOCTYPE html>
-    <html lang="en">
+    <html>
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>New Order Notification</title>
-      <style>
-        body {
-          margin:0;padding:0; background:#f8f9fa; font-family:Arial, sans-serif; color:#333;
-        }
-        .container {
-          max-width:600px; margin:20px auto; background:#fff; border-radius:8px;
-          box-shadow:0 2px 8px rgba(0,0,0,0.05); padding:24px;
-        }
-        .header {
-          background:#007962; color:#fff; padding:22px 0; text-align:center; border-radius:8px 8px 0 0;
-        }
-        .content { margin-top:18px; padding:0 6px;}
-        table {
-          width:100%; border-collapse:collapse; margin-top:14px;
-        }
-        th, td {
-          padding:9px; border-bottom:1px solid #e4e9ee; text-align:left;
-        }
-        th { background:#efefef; font-size:1em;}
-        ul { margin:0 0 7px 0; padding-left:18px; }
-        .footer {
-          margin-top:26px; text-align:center; font-size:0.95em; color:#777;
-        }
-        @media(max-width:600px){
-          .container { padding:12px; }
-          .header { font-size:1.15em; padding:16px 0;}
-          table, th, td { font-size:0.98em;}
-        }
-      </style>
     </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h2>New Order Notification - #${order._id}</h2>
+    <body style="margin:0; padding:0; background:#e0e0e0; font-family:Arial,sans-serif;">
+      <div style="max-width:600px; margin:0 auto; padding:0;">
+        
+        <div style="background:#034C3C; color:#fff; padding:24px; border:4px solid #034C3C;">
+          <div style="background:#fff; color:#000; display:inline-block; padding:4px 12px; font-size:11px; font-weight:700; margin-bottom:12px;">NEW_ORDER</div>
+          <div style="font-size:32px; font-weight:900; text-transform:uppercase; letter-spacing:-1px;">ACTION REQUIRED</div>
+          <div style="font-family:monospace; font-size:13px; margin-top:8px;">#${order._id}</div>
         </div>
-        <div class="content">
-          <p>Dear ${vendor.name},</p>
-          <p>A new order includes items from your menu. Please prepare the following:</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Quantity</th>
-                <th>Price</th>
-                <th>Person Details</th>
-                <th>Delivery Dates</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-          <p><strong>Customer Name: ${order.userId.name || 'N/A'}</strong></p>
-          <p><strong>Customer Email: ${order.userId.email || 'N/A'}</strong></p>
-          <p><strong>Total Amount: ₹${order.totalAmount} ${order.currency}</strong></p>
-          <p><strong>Payment Method: ${order.paymentMethod}</strong></p>
-          <p><strong>Order Date: ${new Date(order.orderDate).toLocaleDateString()}</strong></p>
-          <p><strong>Order Status: ${order.status}</strong></p>
-          ${order.paymentSessionId ? `<p><strong>Payment Session ID: ${order.paymentSessionId}</strong></p>` : ''}
-          <p><strong>Order Created At: ${new Date(order.createdAt).toLocaleString()}</strong></p>
-          <p><strong>Order Last Updated At: ${new Date(order.updatedAt).toLocaleString()}</strong></p>
-          <p><strong>Delivery Address:</strong></p>
-          <p>
+
+        <div style="background:#fff; border:4px solid #034C3C; border-top:none; padding:24px;">
+          
+          <div style="margin-bottom:20px;">
+            <div style="font-size:14px; color:#000;">KITCHEN: ${vendor.name.toUpperCase()}</div>
+          </div>
+
+          <div style="background:#034C3C; color:#fff; padding:16px; margin:20px 0; text-align:center;">
+            <div style="font-size:12px; margin-bottom:4px;">ORDER_VALUE</div>
+            <div style="font-size:36px; font-weight:900;">₹${order.totalAmount}</div>
+          </div>
+
+          <div style="font-family:monospace; font-size:11px; color:#666; margin:20px 0 10px 0;">YOUR_ITEMS</div>
+          ${itemsHtml}
+
+          <div style="border:2px solid #000; padding:16px; margin:20px 0; background:#f5f5f5;">
+            <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:12px;">CUSTOMER</div>
+            <div style="font-size:14px; font-weight:700;">${order.userId.name || 'N/A'}</div>
+            <div style="font-size:13px; margin-top:4px;">${order.userId.email || 'N/A'}</div>
+          </div>
+
+          <div style="border:2px solid #000; padding:16px; margin:20px 0;">
+            <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:12px;">ORDER_INFO</div>
+            <div style="font-size:13px; line-height:2;">
+              <div><span style="font-weight:700;">PAYMENT:</span> ${order.paymentMethod}</div>
+              <div><span style="font-weight:700;">STATUS:</span> ${order.status}</div>
+              <div><span style="font-weight:700;">DATE:</span> ${new Date(order.orderDate).toLocaleDateString()}</div>
+            </div>
+          </div>
+
+          <div style="border:2px solid #000; padding:16px; margin:20px 0;">
+            <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:12px;">DELIVERY_ADDRESS</div>
             ${Array.from(order.deliveryAddresses || new Map()).map(([category, address]) => {
                 const plainAddress = address.toObject ? address.toObject() : address;
                 if (plainAddress && plainAddress.street && plainAddress.city && plainAddress.zip) {
-                    return `<strong>${category}:</strong> ${plainAddress.street}, ${plainAddress.city}, ${plainAddress.zip}<br>`;
+                    return `<div style="font-size:13px; margin-bottom:8px;">
+                      <div style="font-weight:700; text-transform:uppercase;">${category}</div>
+                      <div>${plainAddress.street}, ${plainAddress.city}, ${plainAddress.zip}</div>
+                    </div>`;
                 }
                 return '';
             }).join('')}
-          </p>
-          <p>Please log in to your dashboard for more details and to manage the order.</p>
-          <p>Thank you,<br/>Aharraa Team</p>
+          </div>
+
+          <div style="font-size:11px; font-family:monospace; color:#666; margin-top:24px; line-height:1.8;">
+            CREATED: ${new Date(order.createdAt).toLocaleString()}<br>
+            UPDATED: ${new Date(order.updatedAt).toLocaleString()}
+          </div>
+
         </div>
-        <div class="footer">
-          &copy; ${new Date().getFullYear()} Aharraa. All rights reserved.
+
+        <div style="background:#034C3C; color:#fff; padding:20px; text-align:center; border:4px solid #034C3C; border-top:none;">
+          <div style="font-size:11px; font-family:monospace;">AHARRAA_${new Date().getFullYear()}</div>
+          <div style="font-size:11px; font-family:monospacce;">DEVELOPED BY HYNOX</div>
         </div>
+
       </div>
     </body>
     </html>
