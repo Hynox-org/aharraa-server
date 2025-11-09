@@ -1,5 +1,5 @@
 const User = require("../models/User");
-const supabase = require("../config/supabase"); // Import Supabase client
+const { supabaseAnon } = require("../config/supabase"); // Import Supabase client
 
 const protect = async (req, res, next) => {
   let token;
@@ -12,7 +12,7 @@ const protect = async (req, res, next) => {
       token = req.headers.authorization.split(" ")[1];
 
       // Verify token with Supabase
-      const { data: supabaseUser, error: supabaseError } = await supabase.auth.getUser(token);
+      const { data: supabaseUser, error: supabaseError } = await supabaseAnon.auth.getUser(token);
 
       if (supabaseError || !supabaseUser || !supabaseUser.user) {
         console.error("Supabase auth middleware error:", supabaseError);
