@@ -125,7 +125,7 @@ const getUserOrderConfirmationEmail = (order, user) => {
 
           <div style="background:#034C3C; color:#fff; padding:20px; text-align:center; border:4px solid #034C3C; border-top:none;">
             <div style="font-size:11px; font-family:monospace;">AHARRAA_${new Date().getFullYear()}</div>
-            <div style="font-size:11px; font-family:monospace;">DEVELOPED BY HYNOX</div>
+            <div style="font-size:11px; font-family:monospace;">POWERED BY HYNOX</div>
           </div>
 
         </div>
@@ -270,7 +270,7 @@ const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
 
           <div style="background:#034C3C; color:#fff; padding:20px; text-align:center; border:4px solid #034C3C; border-top:none;">
             <div style="font-size:11px; font-family:monospace;">AHARRAA_${new Date().getFullYear()}</div>
-            <div style="font-size:11px; font-family:monospacce;">DEVELOPED BY HYNOX</div>
+            <div style="font-size:11px; font-family:monospacce;">POWERED BY HYNOX</div>
           </div>
 
         </div>

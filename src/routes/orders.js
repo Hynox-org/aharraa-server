@@ -110,7 +110,11 @@ const orderUpdateSchema = Joi.object({
 
 router.post("/email/test", async (req, res) => {
   const { orderId } = req.body;
-  const order = await Order.findById(orderId);
+  const order = await Order.findById(orderId)
+    .populate("userId")
+    .populate("items.meal._id")
+    .populate("items.plan._id")
+    .populate("items.vendor._id");
 
   if (!order) {
     console.error(`Order not found for ID: ${orderId}`);
@@ -148,21 +152,21 @@ router.post("/email/test", async (req, res) => {
 
     // Send Order Confirmation Email to User
     if (user && user.email) {
-          const userEmailContent = getUserOrderConfirmationEmail(order, user);
-          try {
-            await sendEmail(
-              user.email,
-              `Order #${order._id} Confirmation - Aharraa`,
-              userEmailContent.text, // Pass text content
-              userEmailContent.html, // Pass HTML content
-              [
-                {
-                  filename: `invoice_${order._id}.pdf`,
-                  content: invoicePdfBuffer,
-                  contentType: "application/pdf",
-                },
-              ]
-            );
+      const userEmailContent = getUserOrderConfirmationEmail(order, user);
+      try {
+        await sendEmail(
+          user.email,
+          `Order #${order._id} Confirmation - Aharraa`,
+          userEmailContent.text, // Pass text content
+          userEmailContent.html, // Pass HTML content
+          [
+            {
+              filename: `invoice_${order._id}.pdf`,
+              content: invoicePdfBuffer,
+              contentType: "application/pdf",
+            },
+          ]
+        );
         console.log(
           `Order confirmation email sent to user ${user.email} for order ${order._id}`
         );
@@ -226,8 +230,6 @@ router.post("/email/test", async (req, res) => {
 });
 
 router.post("/webhook", async (req, res) => {
-  console.log("Webhook received:", req.body);
-
   const { type, data, event_time } = req.body;
 
   if (type === "PAYMENT_SUCCESS_WEBHOOK") {
@@ -249,7 +251,11 @@ router.post("/webhook", async (req, res) => {
         return res.status(400).json({ message: "Invalid order ID format" });
       }
 
-      const order = await Order.findById(orderId);
+      const order = await Order.findById(orderId)
+        .populate("userId")
+        .populate("items.meal._id")
+        .populate("items.plan._id")
+        .populate("items.vendor._id");
 
       if (!order) {
         console.error(`Order not found for ID: ${orderId}`);
