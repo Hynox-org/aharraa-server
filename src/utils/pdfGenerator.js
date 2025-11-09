@@ -1,5 +1,5 @@
 const puppeteer = require("puppeteer-core");
-const chromium = require("@sparticuz/chromium"); // Import chromium for executable path and args
+const chromium = require("@sparticuz/chromium");
 const { supabaseServiceRole } = require("../config/supabase");
 
 // Helper functions for calculations
@@ -32,19 +32,15 @@ const generateInvoicePdf = async (order, user) => {
   let browser;
   if (process.env.SERVER_ENVIRONMENT === 'production') {
     browser = await puppeteer.launch({
-      args: chromium.args, // Use only chromium's default args to avoid potential conflicts
-      executablePath: await chromium.executablePath(), // Use chromium's executable path
-      headless: "new", // Modern headless mode
-      ignoreHTTPSErrors: true, // Ignore HTTPS errors, common in some environments
-      userDataDir: '/tmp', // Explicitly set user data directory to /tmp for better compatibility in server environments
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: "new",
+      ignoreHTTPSErrors: true,
+      userDataDir: '/tmp',
     });
   } else {
-    // For local development, assume a local Chrome/Chromium is available
-    // or puppeteer (not puppeteer-core) is installed to manage browser downloads.
-    // For local development, puppeteer-core requires an executablePath.
-    // We'll try common paths for Chrome/Chromium based on the OS.
     const executablePath =
-      process.env.PUPPETEER_EXECUTABLE_PATH || // Allow user to specify via env var
+      process.env.PUPPETEER_EXECUTABLE_PATH ||
       (process.platform === 'win32' && 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe') ||
       (process.platform === 'darwin' && '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome') ||
       (process.platform === 'linux' && '/usr/bin/google-chrome');
@@ -56,12 +52,11 @@ const generateInvoicePdf = async (order, user) => {
 
     browser = await puppeteer.launch({
       executablePath: executablePath,
-      headless: "new", // Use 'new' headless mode
+      headless: "new",
       ignoreHTTPSErrors: true,
     });
   }
   const page = await browser.newPage();
-  // Set navigation timeout to 0 (unlimited) or a higher value
   await page.setDefaultNavigationTimeout(0);
 
   const orderDate = new Date(order.orderDate).toLocaleDateString("en-IN");
@@ -100,29 +95,30 @@ const generateInvoicePdf = async (order, user) => {
 
   // Generate items HTML
   const itemsHtml = order.items
-    .map((item) => {
+    .map((item, index) => {
       const unitPrice = item.itemTotalPrice / item.quantity;
       const startDate = new Date(item.startDate).toLocaleDateString("en-IN");
       const endDate = new Date(item.endDate).toLocaleDateString("en-IN");
 
       return `
       <tr>
-        <td>
-          <strong>${item.meal.name}</strong><br/>
-          <small>${item.plan.name}</small><br/>
-          <small>Period: ${startDate} - ${endDate}</small><br/>
-          <small>Vendor: ${item.vendor.name}</small>
+        <td class="item-number">${index + 1}</td>
+        <td class="item-details">
+          <div class="meal-name">${item.meal.name}</div>
+          <div class="item-meta">
+            <span class="meta-badge plan-badge">${item.plan.name}</span>
+            <span class="meta-badge date-badge">${startDate} - ${endDate}</span>
+          </div>
+          <div class="vendor-name">🏪 ${item.vendor.name}</div>
         </td>
-        <td style="text-align: center;">${item.quantity}</td>
-        <td style="text-align: right;">₹${unitPrice.toFixed(2)}</td>
-        <td style="text-align: right;">₹${item.itemTotalPrice.toFixed(2)}</td>
+        <td class="text-center qty-cell">${item.quantity}</td>
+        <td class="text-right">₹${unitPrice.toFixed(2)}</td>
+        <td class="text-right amount-cell">₹${item.itemTotalPrice.toFixed(2)}</td>
       </tr>
     `;
     })
     .join("");
 
-  // Base64 encoded logo (you can use any online tool to convert your logo)
-  // For now, using a placeholder - replace with your actual base64 logo
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -130,172 +126,397 @@ const generateInvoicePdf = async (order, user) => {
       <meta charset="UTF-8">
       <title>Invoice - ${order._id}</title>
       <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        * { 
+          margin: 0; 
+          padding: 0; 
+          box-sizing: border-box; 
+        }
+        
         body { 
-          font-family: 'Segoe UI', Arial, sans-serif; 
-          color: #333;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          color: #1a1a1a;
           line-height: 1.6;
-          padding: 40px;
+          background: #f8f9fa;
+          padding: 30px 20px;
         }
+        
         .invoice-container {
-          max-width: 800px;
+          max-width: 850px;
           margin: 0 auto;
-          background: white;
+          background: #ffffff;
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 4px 24px rgba(0,0,0,0.08);
         }
-        .header {
+        
+        .invoice-header {
+          background: linear-gradient(135deg, #2d5f3f 0%, #3a7a52 100%);
+          padding: 40px 50px;
+          color: white;
+          position: relative;
+          overflow: hidden;
+        }
+        
+        .invoice-header::before {
+          content: '';
+          position: absolute;
+          top: -50%;
+          right: -10%;
+          width: 300px;
+          height: 300px;
+          background: rgba(255,255,255,0.05);
+          border-radius: 50%;
+        }
+        
+        .header-content {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          margin-bottom: 40px;
-          padding-bottom: 20px;
-          border-bottom: 3px solid #2c5f2d;
+          position: relative;
+          z-index: 1;
         }
+        
         .logo-section {
           flex: 1;
         }
+        
         .logo {
-          width: 180px;
+          width: 160px;
           height: auto;
+          filter: brightness(0) invert(1);
         }
-        .invoice-title {
-          flex: 1;
+        
+        .invoice-title-section {
           text-align: right;
         }
-        .invoice-title h1 {
-          color: #2c5f2d;
-          font-size: 36px;
-          margin-bottom: 5px;
-        }
-        .invoice-title p {
-          color: #666;
+        
+        .invoice-label {
           font-size: 14px;
+          font-weight: 500;
+          letter-spacing: 2px;
+          text-transform: uppercase;
+          opacity: 0.9;
+          margin-bottom: 8px;
         }
-        .details-section {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 40px;
+        
+        .invoice-number {
+          font-size: 24px;
+          font-weight: 700;
+          margin-bottom: 8px;
         }
-        .detail-block {
-          flex: 1;
+        
+        .invoice-date {
+          font-size: 13px;
+          opacity: 0.85;
         }
-        .detail-block h3 {
-          color: #2c5f2d;
-          font-size: 14px;
-          margin-bottom: 10px;
+        
+        .status-badge {
+          display: inline-block;
+          padding: 6px 16px;
+          border-radius: 20px;
+          font-size: 11px;
+          font-weight: 600;
           text-transform: uppercase;
           letter-spacing: 0.5px;
+          background: rgba(255,255,255,0.2);
+          backdrop-filter: blur(10px);
+          margin-top: 12px;
+          border: 1px solid rgba(255,255,255,0.3);
         }
-        .detail-block p {
+        
+        .invoice-body {
+          padding: 40px 50px;
+        }
+        
+        .info-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 40px;
+          margin-bottom: 40px;
+          padding-bottom: 30px;
+          border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .info-block {
+          background: #f8f9fa;
+          padding: 24px;
+          border-radius: 10px;
+          border-left: 4px solid #2d5f3f;
+        }
+        
+        .info-block h3 {
+          color: #2d5f3f;
+          font-size: 12px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          margin-bottom: 14px;
+        }
+        
+        .info-block p {
           font-size: 13px;
-          margin: 3px 0;
-          color: #555;
+          color: #4a4a4a;
+          margin: 6px 0;
+          line-height: 1.6;
         }
-        .order-items {
-          margin-bottom: 30px;
+        
+        .info-block p strong {
+          color: #1a1a1a;
+          font-weight: 600;
         }
-        .order-items h2 {
-          color: #2c5f2d;
+        
+        .info-label {
+          color: #6b6b6b;
+          font-size: 12px;
+          font-weight: 500;
+        }
+        
+        .section-title {
+          color: #1a1a1a;
           font-size: 18px;
-          margin-bottom: 15px;
-          border-bottom: 2px solid #eee;
-          padding-bottom: 10px;
+          font-weight: 700;
+          margin-bottom: 24px;
+          padding-bottom: 12px;
+          border-bottom: 3px solid #2d5f3f;
+          position: relative;
         }
+        
+        .section-title::after {
+          content: '';
+          position: absolute;
+          bottom: -3px;
+          left: 0;
+          width: 60px;
+          height: 3px;
+          background: #5fa878;
+        }
+        
         table {
           width: 100%;
-          border-collapse: collapse;
-          margin-bottom: 20px;
+          border-collapse: separate;
+          border-spacing: 0;
+          margin-bottom: 30px;
+          background: white;
+          border-radius: 8px;
+          overflow: hidden;
+          border: 1px solid #e8e8e8;
         }
+        
         th {
-          background-color: #f8f9fa;
-          color: #333;
-          font-weight: 600;
-          padding: 12px 10px;
+          background: linear-gradient(to bottom, #f8f9fa, #f0f1f3);
+          color: #2d2d2d;
+          font-weight: 700;
+          padding: 16px 14px;
           text-align: left;
-          border-bottom: 2px solid #dee2e6;
-          font-size: 13px;
+          font-size: 12px;
           text-transform: uppercase;
+          letter-spacing: 0.5px;
+          border-bottom: 2px solid #e0e0e0;
         }
+        
         td {
-          padding: 15px 10px;
-          border-bottom: 1px solid #eee;
+          padding: 18px 14px;
+          border-bottom: 1px solid #f0f0f0;
           font-size: 13px;
+          vertical-align: top;
         }
+        
+        tbody tr:last-child td {
+          border-bottom: none;
+        }
+        
+        tbody tr {
+          transition: background-color 0.2s ease;
+        }
+        
         tbody tr:hover {
-          background-color: #f8f9fa;
+          background-color: #f8fdf9;
         }
-        .summary-section {
+        
+        .item-number {
+          color: #999;
+          font-weight: 600;
+          width: 40px;
+        }
+        
+        .item-details {
+          padding-left: 8px;
+        }
+        
+        .meal-name {
+          font-weight: 600;
+          color: #1a1a1a;
+          font-size: 14px;
+          margin-bottom: 8px;
+        }
+        
+        .item-meta {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+          margin-bottom: 6px;
+        }
+        
+        .meta-badge {
+          font-size: 11px;
+          padding: 3px 10px;
+          border-radius: 4px;
+          font-weight: 500;
+        }
+        
+        .plan-badge {
+          background: #e3f2fd;
+          color: #1565c0;
+        }
+        
+        .date-badge {
+          background: #fff3e0;
+          color: #e65100;
+        }
+        
+        .vendor-name {
+          font-size: 12px;
+          color: #666;
+          margin-top: 4px;
+        }
+        
+        .text-center {
+          text-align: center;
+        }
+        
+        .text-right {
+          text-align: right;
+        }
+        
+        .qty-cell {
+          font-weight: 600;
+          color: #2d5f3f;
+        }
+        
+        .amount-cell {
+          font-weight: 700;
+          color: #1a1a1a;
+        }
+        
+        .summary-wrapper {
           display: flex;
           justify-content: flex-end;
           margin-top: 30px;
         }
-        .summary-table {
-          width: 350px;
+        
+        .summary-box {
+          width: 380px;
+          background: #f8f9fa;
+          border-radius: 10px;
+          overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
+        
         .summary-row {
           display: flex;
           justify-content: space-between;
-          padding: 8px 15px;
-          font-size: 14px;
+          padding: 14px 24px;
+          font-size: 13px;
+          border-bottom: 1px solid #e8e8e8;
         }
-        .summary-row.subtotal {
-          border-top: 1px solid #ddd;
-          padding-top: 15px;
+        
+        .summary-row:last-child {
+          border-bottom: none;
+        }
+        
+        .summary-row.subtotal-row {
+          background: white;
+          font-weight: 600;
+          padding-top: 16px;
+        }
+        
+        .summary-row.total-row {
+          background: linear-gradient(135deg, #2d5f3f 0%, #3a7a52 100%);
+          color: white;
+          font-size: 16px;
+          font-weight: 700;
+          padding: 18px 24px;
+        }
+        
+        .summary-label {
+          color: #5a5a5a;
           font-weight: 500;
         }
-        .summary-row.total {
-          background-color: #2c5f2d;
+        
+        .summary-row.total-row .summary-label {
+          color: white;
+        }
+        
+        .summary-value {
+          font-weight: 700;
+          color: #1a1a1a;
+        }
+        
+        .summary-row.total-row .summary-value {
           color: white;
           font-size: 18px;
-          font-weight: bold;
-          margin-top: 10px;
-          border-radius: 4px;
         }
-        .summary-label {
-          color: #666;
+        
+        .info-card {
+          background: linear-gradient(to right, #f8f9fa, #ffffff);
+          padding: 24px;
+          margin-top: 28px;
+          border-radius: 10px;
+          border: 1px solid #e8e8e8;
+          border-left: 4px solid #2d5f3f;
         }
-        .summary-value {
+        
+        .info-card h3 {
+          color: #2d5f3f;
+          font-size: 13px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.8px;
+          margin-bottom: 14px;
+        }
+        
+        .info-card p {
+          font-size: 13px;
+          color: #4a4a4a;
+          margin: 8px 0;
+          line-height: 1.6;
+        }
+        
+        .info-card p strong {
+          color: #1a1a1a;
           font-weight: 600;
-          text-align: right;
         }
-        .summary-row.total .summary-label,
-        .summary-row.total .summary-value {
-          color: white;
-        }
+        
         .footer {
           margin-top: 50px;
-          padding-top: 20px;
-          border-top: 2px solid #eee;
+          padding: 30px 50px;
+          background: #f8f9fa;
           text-align: center;
-          color: #777;
-          font-size: 13px;
+          border-top: 2px solid #e8e8e8;
         }
-        .payment-info {
-          background-color: #f8f9fa;
-          padding: 20px;
-          margin-top: 30px;
-          border-radius: 4px;
-          border-left: 4px solid #2c5f2d;
+        
+        .footer-title {
+          color: #2d5f3f;
+          font-weight: 700;
+          font-size: 15px;
+          margin-bottom: 8px;
         }
-        .payment-info h3 {
-          color: #2c5f2d;
-          font-size: 14px;
-          margin-bottom: 10px;
-        }
-        .payment-info p {
-          font-size: 13px;
-          color: #555;
-          margin: 5px 0;
-        }
-        .status-badge {
-          display: inline-block;
-          padding: 4px 12px;
-          border-radius: 12px;
+        
+        .footer p {
+          color: #666;
           font-size: 12px;
-          font-weight: 600;
-          text-transform: uppercase;
-          background-color: #d4edda;
-          color: #155724;
+          margin: 6px 0;
         }
+        
+        .footer-note {
+          font-size: 11px;
+          color: #999;
+          margin-top: 16px;
+          font-style: italic;
+        }
+        
         small {
           font-size: 11px;
           color: #888;
@@ -305,62 +526,64 @@ const generateInvoicePdf = async (order, user) => {
     <body>
       <div class="invoice-container">
         <!-- Header -->
-        <div class="header">
-          <div class="logo-section">
-            <img src=${process.env.PDF_LOGO_URL} alt="Aharra Logo" class="logo">
-          </div>
-          <div class="invoice-title">
-            <h1>INVOICE</h1>
-            <p>Invoice #: ${order._id.toString().slice(-8).toUpperCase()}</p>
-            <p>Date: ${orderDate}</p>
-            <p><span class="status-badge">${order.status}</span></p>
-          </div>
-        </div>
-
-        <!-- Details Section -->
-        <div class="details-section">
-          <div class="detail-block">
-            <h3>Bill To</h3>
-            <p><strong>${
-              user.fullName || user.metadata?.full_name || "N/A"
-            }</strong></p>
-            <p>${user.email}</p>
-            <p>${user.phoneNumber || "N/A"}</p>
-            ${
-              user.breakfastDeliveryLocation
-                ? `
-              <p>${user.breakfastDeliveryLocation.street || ""}</p>
-              <p>${user.breakfastDeliveryLocation.state || ""} - ${
-                    user.breakfastDeliveryLocation.pincode || ""
-                  }</p>
-            `
-                : ""
-            }
-          </div>
-          <div class="detail-block" style="text-align: right;">
-            <h3>Order Details</h3>
-            <p><strong>Order ID:</strong> ${order._id}</p>
-            <p><strong>Order Date:</strong> ${orderDate}</p>
-            <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
-            ${
-              order.paymentConfirmedAt
-                ? `<p><strong>Payment Date:</strong> ${new Date(
-                    order.paymentConfirmedAt
-                  ).toLocaleDateString("en-IN")}</p>`
-                : ""
-            }
+        <div class="invoice-header">
+          <div class="header-content">
+            <div class="logo-section">
+              <img src="${process.env.PDF_LOGO_URL}" alt="Aharra Logo" class="logo">
+            </div>
+            <div class="invoice-title-section">
+              <div class="invoice-label">Invoice</div>
+              <div class="invoice-number">#${order._id.toString().slice(-8).toUpperCase()}</div>
+              <div class="invoice-date">${orderDate}</div>
+              <div class="status-badge">${order.status}</div>
+            </div>
           </div>
         </div>
 
-        <!-- Order Items -->
-        <div class="order-items">
-          <h2>Order Items</h2>
+        <!-- Body -->
+        <div class="invoice-body">
+          <!-- Info Grid -->
+          <div class="info-grid">
+            <div class="info-block">
+              <h3>Bill To</h3>
+              <p><strong>${user.fullName || user.metadata?.full_name || "N/A"}</strong></p>
+              <p>${user.email}</p>
+              <p>${user.phoneNumber || "N/A"}</p>
+              ${
+                user.breakfastDeliveryLocation
+                  ? `
+                <p>${user.breakfastDeliveryLocation.street || ""}</p>
+                <p>${user.breakfastDeliveryLocation.state || ""} - ${
+                      user.breakfastDeliveryLocation.pincode || ""
+                    }</p>
+              `
+                  : ""
+              }
+            </div>
+            <div class="info-block">
+              <h3>Order Details</h3>
+              <p><span class="info-label">Order ID:</span> <strong>${order._id}</strong></p>
+              <p><span class="info-label">Order Date:</span> <strong>${orderDate}</strong></p>
+              <p><span class="info-label">Payment:</span> <strong>${order.paymentMethod}</strong></p>
+              ${
+                order.paymentConfirmedAt
+                  ? `<p><span class="info-label">Paid On:</span> <strong>${new Date(
+                      order.paymentConfirmedAt
+                    ).toLocaleDateString("en-IN")}</strong></p>`
+                  : ""
+              }
+            </div>
+          </div>
+
+          <!-- Order Items -->
+          <h2 class="section-title">Order Items</h2>
           <table>
             <thead>
               <tr>
+                <th style="width: 5%;">#</th>
                 <th style="width: 45%;">Item Description</th>
-                <th style="width: 15%; text-align: center;">Quantity</th>
-                <th style="width: 20%; text-align: right;">Unit Price</th>
+                <th style="width: 12%; text-align: center;">Qty</th>
+                <th style="width: 18%; text-align: right;">Unit Price</th>
                 <th style="width: 20%; text-align: right;">Amount</th>
               </tr>
             </thead>
@@ -368,73 +591,72 @@ const generateInvoicePdf = async (order, user) => {
               ${itemsHtml}
             </tbody>
           </table>
-        </div>
 
-        <!-- Order Summary -->
-        <div class="summary-section">
-          <div class="summary-table">
-            <div class="summary-row subtotal">
-              <span class="summary-label">Subtotal (Items):</span>
-              <span class="summary-value">₹${subtotal.toFixed(2)}</span>
-            </div>
-            <div class="summary-row">
-              <span class="summary-label">Delivery Charges:</span>
-              <span class="summary-value">₹${deliveryCost.toFixed(2)}</span>
-            </div>
-            <div class="summary-row">
-              <span class="summary-label">Platform Fee (10%):</span>
-              <span class="summary-value">₹${platformCost.toFixed(2)}</span>
-            </div>
-            <div class="summary-row">
-              <span class="summary-label">GST (5%):</span>
-              <span class="summary-value">₹${gstCost.toFixed(2)}</span>
-            </div>
-            <div class="summary-row total">
-              <span class="summary-label">Total Amount:</span>
-              <span class="summary-value">₹${grandTotal.toFixed(2)}</span>
+          <!-- Summary -->
+          <div class="summary-wrapper">
+            <div class="summary-box">
+              <div class="summary-row subtotal-row">
+                <span class="summary-label">Subtotal (Items)</span>
+                <span class="summary-value">₹${subtotal.toFixed(2)}</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">Delivery Charges</span>
+                <span class="summary-value">₹${deliveryCost.toFixed(2)}</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">Platform Fee (10%)</span>
+                <span class="summary-value">₹${platformCost.toFixed(2)}</span>
+              </div>
+              <div class="summary-row">
+                <span class="summary-label">GST (5%)</span>
+                <span class="summary-value">₹${gstCost.toFixed(2)}</span>
+              </div>
+              <div class="summary-row total-row">
+                <span class="summary-label">Total Amount</span>
+                <span class="summary-value">₹${grandTotal.toFixed(2)}</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Payment Info -->
-        <div class="payment-info">
-          <h3>Payment Information</h3>
-          <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
-          <p><strong>Amount Paid:</strong> ₹${order.totalAmount.toFixed(2)}</p>
-          <p><strong>Currency:</strong> ${order.currency}</p>
-        </div>
-
-        <!-- Delivery Addresses -->
-        ${
-          order.deliveryAddresses &&
-          Object.keys(order.deliveryAddresses).length > 0
-            ? `
-          <div class="payment-info" style="margin-top: 20px;">
-            <h3>Delivery Addresses</h3>
-            ${Array.from(order.deliveryAddresses || new Map()).map(([category, address]) => {
-                const plainAddress = address.toObject ? address.toObject() : address;
-                if (plainAddress && plainAddress.street && plainAddress.city && plainAddress.zip) {
-                    return `<p><strong>${category}:</strong> ${plainAddress.street}, ${plainAddress.city}, ${plainAddress.zip}</p>`;
-                }
-                return '';
-            }).filter(Boolean).join('')}
+          <!-- Payment Info -->
+          <div class="info-card">
+            <h3>Payment Information</h3>
+            <p><strong>Payment Method:</strong> ${order.paymentMethod}</p>
+            <p><strong>Amount Paid:</strong> ₹${order.totalAmount.toFixed(2)}</p>
+            <p><strong>Currency:</strong> ${order.currency}</p>
           </div>
-        `
-            : ""
-        }
+
+          <!-- Delivery Addresses -->
+          ${
+            order.deliveryAddresses &&
+            Object.keys(order.deliveryAddresses).length > 0
+              ? `
+            <div class="info-card">
+              <h3>Delivery Addresses</h3>
+              ${Array.from(order.deliveryAddresses || new Map()).map(([category, address]) => {
+                  const plainAddress = address.toObject ? address.toObject() : address;
+                  if (plainAddress && plainAddress.street && plainAddress.city && plainAddress.zip) {
+                      return `<p><strong>${category}:</strong> ${plainAddress.street}, ${plainAddress.city}, ${plainAddress.zip}</p>`;
+                  }
+                  return '';
+              }).filter(Boolean).join('')}
+            </div>
+          `
+              : ""
+          }
+        </div>
 
         <!-- Footer -->
         <div class="footer">
-          <p><strong>Thank you for your order!</strong></p>
+          <p class="footer-title">Thank you for your order!</p>
           <p>For any queries, please contact us at support@aharra.com</p>
-          <p style="margin-top: 10px; font-size: 11px;">This is a computer-generated invoice and does not require a signature.</p>
+          <p class="footer-note">This is a computer-generated invoice and does not require a signature.</p>
         </div>
       </div>
     </body>
     </html>
   `;
 
-  // Change waitUntil option to avoid network timeout
   await page.setContent(htmlContent, { waitUntil: "domcontentloaded" });
 
   const pdfBuffer = await page.pdf({
@@ -480,7 +702,6 @@ const generateInvoicePdf = async (order, user) => {
     .getPublicUrl(fileName);
   publicUrl = publicUrlData.publicUrl;
 
-  // Append a timestamp to the URL to prevent caching issues
   return `${publicUrl}?v=${new Date().getTime()}`;
 };
 
