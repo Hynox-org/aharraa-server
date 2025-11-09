@@ -9,9 +9,10 @@ const SHEET_NAME = 'Orders'; // Default sheet name
 const SHEET_RANGE = `${SHEET_NAME}!A:Z`; // Adjust range as needed
 const LAST_SYNCED_CELL = `${SHEET_NAME}!B1`; // Assuming B1 is where "Last Synced" timestamp will be
 
-// Define the expected header for the Google Sheet
+// Define the expected header for the Google Sheet, including the Last Synced placeholder
 const DEFAULT_HEADER = [
   'Order ID',
+  'Last Synced', // Placeholder for the timestamp
   'User Email',
   'Total Amount',
   'Currency',
@@ -90,8 +91,11 @@ async function syncOrdersToGoogleSheet() {
       range: SHEET_RANGE,
     });
     let existingRows = sheetResponse.data.values || [];
+    console.log(`Fetched existingRows from sheet: ${JSON.stringify(existingRows)}`);
     let header = existingRows.length > 0 ? existingRows[0] : [];
     let dataRows = existingRows.slice(1);
+    console.log(`Header: ${JSON.stringify(header)}`);
+    console.log(`Data rows (after slicing header): ${JSON.stringify(dataRows)}`);
 
     // Check if header exists and matches the default header. If not, write the default header.
     if (existingRows.length === 0 || !arraysEqual(header, DEFAULT_HEADER)) {
@@ -116,83 +120,52 @@ async function syncOrdersToGoogleSheet() {
       throw new Error('Internal error: "Order ID" column not found after header initialization.');
     }
 
-    const sheetOrderMap = new Map();
-    dataRows.forEach((row, index) => {
-      if (row[orderIdColumnIndex]) {
-        sheetOrderMap.set(row[orderIdColumnIndex], { rowData: row, rowIndex: index + 1 }); // +1 for header offset
-      }
-    });
+    // Prepare all order data to be written
+    const allOrderData = orders.map(order => [
+      order._id.toString(),
+      '', // Placeholder for 'Last Synced' column in data rows, will be updated separately
+      order.userId ? order.userId.email : 'N/A',
+      order.totalAmount,
+      order.currency,
+      order.orderDate.toISOString(),
+      order.status,
+      order.paymentMethod,
+      order.paymentDetails ? order.paymentDetails.status : 'N/A',
+      order.createdAt.toISOString(),
+      order.updatedAt.toISOString(),
+      // Ensure this matches DEFAULT_HEADER
+    ]);
 
-    const updates = [];
-    const newRows = [];
+    // Clear existing data rows (keep header)
+    console.log(`Existing rows in sheet "${SHEET_NAME}" before clearing:`, existingRows.length);
+    console.log(`Data rows (excluding header) in sheet "${SHEET_NAME}" before clearing:`, dataRows.length);
 
-    for (const order of orders) {
-      const orderId = order._id.toString();
-      // Ensure orderData matches the DEFAULT_HEADER columns
-      const orderData = [
-        orderId,
-        order.userId ? order.userId.email : 'N/A', // User Email
-        order.totalAmount, // Total Amount
-        order.currency, // Currency
-        order.orderDate.toISOString(), // Order Date
-        order.status, // Status
-        order.paymentMethod, // Payment Method
-        order.paymentDetails ? order.paymentDetails.status : 'N/A', // Payment Status
-        order.createdAt.toISOString(), // Created At
-        order.updatedAt.toISOString(), // Updated At
-        // Add more fields here if you added them to DEFAULT_HEADER
-      ];
-
-      if (sheetOrderMap.has(orderId)) {
-        // Order exists, check for updates
-        const { rowData, rowIndex } = sheetOrderMap.get(orderId);
-        const existingOrderData = rowData; // Assuming rowData is already an array of values
-
-        // Simple comparison: if any value differs, update the row
-        let needsUpdate = false;
-        for (let i = 0; i < orderData.length; i++) {
-          if (orderData[i] !== existingOrderData[i]) {
-            needsUpdate = true;
-            break;
-          }
-        }
-
-        if (needsUpdate) {
-          updates.push({
-            range: `Sheet1!A${rowIndex + 1}:Z${rowIndex + 1}`, // +1 for 0-indexed to 1-indexed, +1 for header
-            values: [orderData],
-          });
-          updatedOrders++;
-        }
-      } else {
-        // New order, append a new row
-        newRows.push(orderData);
-        newOrders++;
-      }
-    }
-
-    // Perform batch updates
-    if (updates.length > 0) {
-      await sheets.spreadsheets.values.batchUpdate({
+    if (dataRows.length > 0) {
+      await sheets.spreadsheets.values.clear({
         spreadsheetId: SPREADSHEET_ID,
-        resource: {
-          valueInputOption: 'RAW',
-          data: updates,
-        },
+        range: `${SHEET_NAME}!A2:Z`, // Clear from row 2 onwards
       });
+      console.log(`Cleared ${dataRows.length} existing data rows from sheet "${SHEET_NAME}".`);
+    } else {
+      console.log(`No data rows to clear in sheet "${SHEET_NAME}".`);
     }
 
-    // Append new rows
-    if (newRows.length > 0) {
+    // Write all current orders to the sheet
+    if (allOrderData.length > 0) {
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
-        range: SHEET_RANGE, // Append to the end
+        range: `${SHEET_NAME}!A2`, // Start appending from row 2 (after header)
         valueInputOption: 'RAW',
         resource: {
-          values: newRows,
+          values: allOrderData,
         },
       });
+      newOrders = allOrderData.length; // All orders are "new" in this replacement strategy
+      console.log(`Appended ${newOrders} orders to sheet "${SHEET_NAME}".`);
     }
+
+    totalOrders = allOrderData.length; // Update totalOrders to reflect what was written
+    updatedOrders = 0; // No individual updates in this strategy
 
     // Update "Last Synced" timestamp in the header
     await sheets.spreadsheets.values.update({
@@ -200,7 +173,7 @@ async function syncOrdersToGoogleSheet() {
       range: LAST_SYNCED_CELL,
       valueInputOption: 'RAW',
       resource: {
-        values: [[`Last Synced: ${new Date().toLocaleString()}`]],
+        values: [[`Last Synced: ${new Date().toLocaleString()}`]], // Update only the timestamp cell
       },
     });
 
@@ -232,13 +205,17 @@ async function syncOrdersToGoogleSheet() {
 function arraysEqual(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
+    // Special handling for 'Last Synced' column
+    if (b[i] === 'Last Synced' && a[i].startsWith('Last Synced:')) {
+      continue; // Consider it a match if it starts with 'Last Synced:'
+    }
     if (a[i] !== b[i]) return false;
   }
   return true;
 }
 
 function startOrderSyncCronJob() {
-  // Schedule to run every day at 00:00 AM
+  // IMPORTANT: For production, use the daily schedule below.
   cron.schedule('0 0 * * *', async () => {
     console.log('Running scheduled order synchronization...');
     await syncOrdersToGoogleSheet();
