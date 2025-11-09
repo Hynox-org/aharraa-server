@@ -108,6 +108,123 @@ const orderUpdateSchema = Joi.object({
   newEndDate: Joi.string().isoDate().optional(), // Top-level newEndDate for a specific item
 }).min(1); // At least one field must be present for update
 
+router.post("/email/test", async (req, res) => {
+  const { orderId } = req.body;
+  const order = await Order.findById(orderId);
+
+  if (!order) {
+    console.error(`Order not found for ID: ${orderId}`);
+    return res.status(404).json({ message: "Order not found" });
+  }
+
+  // Update order status and payment details
+  // order.paymentDetails = {
+  //   cfPaymentId: cfPaymentId,
+  //   status: paymentStatus,
+  //   paymentTime: new Date(paymentTime),
+  //   bankReference: bankReference,
+  //   method: paymentData.payment_group, // Assuming payment_group is the method
+  // };
+  var paymentStatus = "SUCCESS";
+  if (paymentStatus === "SUCCESS") {
+    order.status = "confirmed";
+    order.paymentConfirmedAt = new Date();
+
+    // Fetch user and vendor details for email and invoice
+    const user = await User.findById(order.userId);
+    if (!user) {
+      console.error(`User not found for order ${orderId}`);
+      // Continue processing, but log the error
+    }
+
+    // Collect all unique vendor IDs from order items
+    const vendorIds = [
+      ...new Set(order.items.map((item) => item.vendor._id.toString())),
+    ];
+    const vendors = await Vendor.find({ _id: { $in: vendorIds } });
+
+    // Generate Invoice PDF
+    const invoicePdfBuffer = await generateInvoicePdf(order, user, vendors);
+
+    // Send Order Confirmation Email to User
+    if (user && user.email) {
+          const userEmailContent = getUserOrderConfirmationEmail(order, user);
+          try {
+            await sendEmail(
+              user.email,
+              `Order #${order._id} Confirmation - Aharraa`,
+              userEmailContent.text, // Pass text content
+              userEmailContent.html, // Pass HTML content
+              [
+                {
+                  filename: `invoice_${order._id}.pdf`,
+                  content: invoicePdfBuffer,
+                  contentType: "application/pdf",
+                },
+              ]
+            );
+        console.log(
+          `Order confirmation email sent to user ${user.email} for order ${order._id}`
+        );
+      } catch (emailError) {
+        console.error(
+          `Failed to send order confirmation email to user ${user.email} for order ${order._id}:`,
+          emailError.message
+        );
+      }
+    } else {
+      console.warn(
+        `User email not available for order ${order._id}, skipping user email.`
+      );
+    }
+
+    // Send Order Notification Email to Vendors
+    for (const vendor of vendors) {
+      if (vendor.email) {
+        // Filter order items relevant to the current vendor
+        const vendorItems = order.items.filter(
+          (item) => item.vendor._id.toString() === vendor._id.toString()
+        );
+        const vendorEmailContent = getVendorOrderNotificationEmail(
+          order,
+          vendor,
+          vendorItems
+        );
+        try {
+          await sendEmail(
+            vendor.email,
+            `New Order #${order._id} Notification - Aharraa`,
+            vendorEmailContent.text, // Pass text content
+            vendorEmailContent.html // Pass HTML content
+          );
+          console.log(
+            `Order notification email sent to vendor ${vendor.email} for order ${order._id}`
+          );
+        } catch (emailError) {
+          console.error(
+            `Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`,
+            emailError.message
+          );
+        }
+      } else {
+        console.warn(
+          `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
+        );
+      }
+    }
+  } else if (paymentStatus === "FAILED") {
+    order.status = "failed";
+  } else {
+    // Handle other statuses if necessary, e.g., PENDING, REFUNDED
+    console.log(
+      `Webhook received for order ${orderId} with status: ${paymentStatus}. No status change applied.`
+    );
+  }
+
+  await order.save();
+  res.status(200).json({ message: "Okay" });
+});
+
 router.post("/webhook", async (req, res) => {
   console.log("Webhook received:", req.body);
 
@@ -115,7 +232,11 @@ router.post("/webhook", async (req, res) => {
 
   if (type === "PAYMENT_SUCCESS_WEBHOOK") {
     try {
-      const { order: orderData, payment: paymentData, customer_details: customerDetailsData } = data;
+      const {
+        order: orderData,
+        payment: paymentData,
+        customer_details: customerDetailsData,
+      } = data;
 
       const orderId = orderData.order_id;
       const paymentStatus = paymentData.payment_status;
@@ -156,8 +277,10 @@ router.post("/webhook", async (req, res) => {
         }
 
         // Collect all unique vendor IDs from order items
-        const vendorIds = [...new Set(order.items.map(item => item.vendor._id.toString()))];
-        const vendors = await Vendor.find({ '_id': { $in: vendorIds } });
+        const vendorIds = [
+          ...new Set(order.items.map((item) => item.vendor._id.toString())),
+        ];
+        const vendors = await Vendor.find({ _id: { $in: vendorIds } });
 
         // Generate Invoice PDF
         const invoicePdfBuffer = await generateInvoicePdf(order, user, vendors);
@@ -169,58 +292,88 @@ router.post("/webhook", async (req, res) => {
             await sendEmail(
               user.email,
               `Order #${order._id} Confirmation - Aharraa`,
-              userEmailContent.text,
-              userEmailContent.html,
-              [{ filename: `invoice_${order._id}.pdf`, content: invoicePdfBuffer, contentType: 'application/pdf' }]
+              userEmailContent.text, // Pass text content
+              userEmailContent.html, // Pass HTML content
+              [
+                {
+                  filename: `invoice_${order._id}.pdf`,
+                  content: invoicePdfBuffer,
+                  contentType: "application/pdf",
+                },
+              ]
             );
-            console.log(`Order confirmation email sent to user ${user.email} for order ${order._id}`);
+            console.log(
+              `Order confirmation email sent to user ${user.email} for order ${order._id}`
+            );
           } catch (emailError) {
-            console.error(`Failed to send order confirmation email to user ${user.email} for order ${order._id}:`, emailError.message);
+            console.error(
+              `Failed to send order confirmation email to user ${user.email} for order ${order._id}:`,
+              emailError.message
+            );
           }
         } else {
-          console.warn(`User email not available for order ${order._id}, skipping user email.`);
+          console.warn(
+            `User email not available for order ${order._id}, skipping user email.`
+          );
         }
 
         // Send Order Notification Email to Vendors
         for (const vendor of vendors) {
           if (vendor.email) {
             // Filter order items relevant to the current vendor
-            const vendorItems = order.items.filter(item => item.vendor._id.toString() === vendor._id.toString());
-            const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor, vendorItems);
+            const vendorItems = order.items.filter(
+              (item) => item.vendor._id.toString() === vendor._id.toString()
+            );
+            const vendorEmailContent = getVendorOrderNotificationEmail(
+              order,
+              vendor,
+              vendorItems
+            );
             try {
               await sendEmail(
                 vendor.email,
                 `New Order #${order._id} Notification - Aharraa`,
-                vendorEmailContent.text,
-                vendorEmailContent.html
+                vendorEmailContent.text, // Pass text content
+                vendorEmailContent.html // Pass HTML content
               );
-              console.log(`Order notification email sent to vendor ${vendor.email} for order ${order._id}`);
+              console.log(
+                `Order notification email sent to vendor ${vendor.email} for order ${order._id}`
+              );
             } catch (emailError) {
-              console.error(`Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`, emailError.message);
+              console.error(
+                `Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`,
+                emailError.message
+              );
             }
           } else {
-            console.warn(`Vendor email not available for vendor ${vendor._id}, skipping vendor email.`);
+            console.warn(
+              `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
+            );
           }
         }
-
       } else if (paymentStatus === "FAILED") {
         order.status = "failed";
       } else {
         // Handle other statuses if necessary, e.g., PENDING, REFUNDED
-        console.log(`Webhook received for order ${orderId} with status: ${paymentStatus}. No status change applied.`);
+        console.log(
+          `Webhook received for order ${orderId} with status: ${paymentStatus}. No status change applied.`
+        );
       }
 
       await order.save();
       console.log(`Order ${orderId} updated to status: ${order.status}`);
       res.status(200).json({ message: "Webhook processed successfully" });
-
     } catch (error) {
       console.error("Error processing PAYMENT_SUCCESS_WEBHOOK:", error);
       res.status(500).json({ message: "Internal Server Error" });
     }
   } else {
-    console.log(`Received webhook of type: ${type}. No specific logic implemented for this type.`);
-    res.status(200).json({ message: `Webhook type ${type} received, but not processed.` });
+    console.log(
+      `Received webhook of type: ${type}. No specific logic implemented for this type.`
+    );
+    res
+      .status(200)
+      .json({ message: `Webhook type ${type} received, but not processed.` });
   }
 });
 
@@ -370,12 +523,10 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
 
     const { error, value } = orderUpdateSchema.validate(req.body);
     if (error) {
-      return res
-        .status(400)
-        .json({
-          error: "Bad Request",
-          details: `Validation failed: ${error.details[0].message}`,
-        });
+      return res.status(400).json({
+        error: "Bad Request",
+        details: `Validation failed: ${error.details[0].message}`,
+      });
     }
 
     const order = await Order.findOne({ _id: orderId, userId: userId });
@@ -398,11 +549,9 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
         // Example: Allow setting to delivered if confirmed (might be admin-only in a real app)
         order.status = value.status;
       } else {
-        return res
-          .status(400)
-          .json({
-            message: `Invalid status update from ${order.status} to ${value.status}`,
-          });
+        return res.status(400).json({
+          message: `Invalid status update from ${order.status} to ${value.status}`,
+        });
       }
     }
 

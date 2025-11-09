@@ -14,7 +14,7 @@ const sendEmail = async (
   try {
     const msg = {
       to,
-      from: process.env.SENDGRID_FROM_EMAIL, // Change to your verified sender
+      from: process.env.SENDGRID_FROM_EMAIL, // Use a verified sender email
       subject,
       text: textContent,
       html: htmlContent,
@@ -32,7 +32,7 @@ const sendEmail = async (
   } catch (error) {
     console.error(
       `Error sending email to ${to} with subject "${subject}":`,
-      error
+      error.response ? error.response.body.errors : error
     );
     // Re-throw the error to be handled by the caller
     throw new Error(`Failed to send email to ${to}: ${error.message}`);
