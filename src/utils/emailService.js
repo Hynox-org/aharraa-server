@@ -1,18 +1,7 @@
-const nodemailer = require("nodemailer");
+const sgMail = require('@sendgrid/mail');
 
-// Configure the email transporter
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  pool: true,              // Enable connection pooling
-  maxConnections: 5,       // Limit concurrent connections
-  maxMessages: 100,        // Messages per connection
-  rateDelta: 1000,         // Time between messages (ms)
-  rateLimit: 5             // Max emails per rateDelta
-});
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// sgMail.setDataResidency('eu'); // uncomment the above line if you are sending mail using a regional EU subuser
 
 // Function to send an email
 const sendEmail = async (
@@ -23,19 +12,23 @@ const sendEmail = async (
   attachments = []
 ) => {
   try {
-    const mailOptions = {
-      from: process.env.EMAIL_FROM,
+    const msg = {
       to,
+      from: process.env.SENDGRID_FROM_EMAIL, // Change to your verified sender
       subject,
-      text: textContent, // Use 'text' for plain text content
-      html: htmlContent, // Use 'html' for HTML content
-      attachments,
+      text: textContent,
+      html: htmlContent,
+      attachments: attachments.map(attachment => ({
+        content: attachment.content.toString('base64'),
+        filename: attachment.filename,
+        type: attachment.contentType,
+        disposition: 'attachment',
+        contentId: attachment.cid,
+      })),
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(
-      `Email sent to ${to} with subject: ${subject}. Message ID: ${info.messageId}, Accepted: ${info.accepted}, Rejected: ${info.rejected}`
-    );
+    await sgMail.send(msg);
+    console.log(`Email sent to ${to} with subject: ${subject}`);
   } catch (error) {
     console.error(
       `Error sending email to ${to} with subject "${subject}":`,
