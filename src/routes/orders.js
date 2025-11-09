@@ -18,6 +18,8 @@ const {
   getUserOrderConfirmationEmail,
   getVendorOrderNotificationEmail,
 } = require("../utils/emailTemplates"); // Import email templates
+const { getGoogleSheetClient } = require("../utils/googleSheets"); // Import Google Sheets client
+const { syncOrdersToGoogleSheet } = require("../cron/syncOrdersCron"); // Import sync function
 
 // Joi schema for the test endpoint
 const testEmailPdfSchema = Joi.object({
@@ -737,5 +739,23 @@ router.get(
     }
   }
 );
+
+// GET /api/sync-orders - Manually trigger order synchronization
+router.get("/sync-orders", async (req, res) => {
+  try {
+    const result = await syncOrdersToGoogleSheet();
+    res.status(200).json(result);
+  } catch (error) {
+    console.error("Error triggering order synchronization:", error);
+    res.status(500).json({
+      status: "error",
+      message: "Internal Server Error",
+      timestamp: new Date().toISOString(),
+      failedUpdates: [{ error: error.message, timestamp: new Date().toISOString() }],
+    });
+  }
+});
+
+module.exports = router;
 
 module.exports = router;

@@ -3,3 +3,4 @@ node_modules/
 .DS_Store
 coverage/
 .nodemon*
+service_account_credentials.json
