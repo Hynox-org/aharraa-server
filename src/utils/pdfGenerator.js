@@ -1,6 +1,6 @@
 const puppeteer = require("puppeteer-core");
 const chromium = require("@sparticuz/chromium"); // Import chromium for executable path and args
-const supabase = require("../config/supabase");
+const { supabaseServiceRole } = require("../config/supabase");
 
 // Helper functions for calculations
 function calculateDeliveryCost(
@@ -430,7 +430,7 @@ const generateInvoicePdf = async (order, user) => {
 
   // Upload to Supabase
   const fileName = `invoice-${order._id}.pdf`;
-  const { data: listData, error: listError } = await supabase.storage
+  const { data: listData, error: listError } = await supabaseServiceRole.storage
     .from("AharraaInvoices")
     .list("", { search: fileName });
 
@@ -441,7 +441,7 @@ const generateInvoicePdf = async (order, user) => {
     throw new Error("Failed to check for existing invoice PDF.");
   }
 
-  const { data, error } = await supabase.storage
+  const { data, error } = await supabaseServiceRole.storage
     .from("AharraaInvoices")
     .upload(fileName, pdfBuffer, {
       contentType: "application/pdf",
@@ -453,7 +453,7 @@ const generateInvoicePdf = async (order, user) => {
     throw new Error("Failed to upload invoice PDF.");
   }
 
-  const { data: publicUrlData } = supabase.storage
+  const { data: publicUrlData } = supabaseServiceRole.storage
     .from("AharraaInvoices")
     .getPublicUrl(fileName);
   publicUrl = publicUrlData.publicUrl;

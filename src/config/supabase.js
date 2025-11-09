@@ -13,13 +13,21 @@ if (!SUPABASE_SERVICE_ROLE_KEY && !SUPABASE_ANON_KEY) {
 }
 
 // For server-side operations, prefer service role key if available, fall back to anon key
-const apiKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
-
-const supabase = createClient(SUPABASE_URL, apiKey, {
+const supabaseAnon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: false,
     persistSession: false
   }
 });
 
-module.exports = supabase;
+const supabaseServiceRole = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
+
+module.exports = {
+  supabaseAnon,
+  supabaseServiceRole
+};
