@@ -30,10 +30,11 @@ function calculateGrandTotal({
 
 const generateInvoicePdf = async (order, user) => {
   const browser = await puppeteer.launch({
-    args: [...chromium.args, "--hide-scrollbars", "--disable-web-security"], // Use chromium's default args
+    args: chromium.args, // Use only chromium's default args to avoid potential conflicts
     executablePath: await chromium.executablePath(), // Use chromium's executable path
     headless: "new", // Modern headless mode
     ignoreHTTPSErrors: true, // Ignore HTTPS errors, common in some environments
+    userDataDir: '/tmp', // Explicitly set user data directory to /tmp for better compatibility in server environments
   });
   const page = await browser.newPage();
   // Set navigation timeout to 0 (unlimited) or a higher value
