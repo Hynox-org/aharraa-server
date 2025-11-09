@@ -4,7 +4,7 @@
 const express = require("express");
 const Joi = require("joi");
 const User = require("../models/User");
-const supabase = require("../config/supabase"); // Import Supabase client
+const { supabaseAnon, supabaseServiceRole } = require("../config/supabase"); // Import Supabase client
 
 const router = express.Router();
 
@@ -90,7 +90,7 @@ router.post("/signup", async (req, res) => {
     }
 
     // Register user with Supabase Auth
-    const { data, error: supabaseError } = await supabase.auth.signUp({
+    const { data, error: supabaseError } = await supabaseAnon.auth.signUp({
       email,
       password,
     });
@@ -173,7 +173,7 @@ router.post("/signin", async (req, res) => {
     const { email, password } = req.body;
 
     // Authenticate user with Supabase Auth
-    const { data, error: supabaseError } = await supabase.auth.signInWithPassword({
+    const { data, error: supabaseError } = await supabaseAnon.auth.signInWithPassword({
       email,
       password,
     });
@@ -263,7 +263,7 @@ router.post("/forgot-password", async (req, res) => {
     const { email } = req.body;
     const redirectUrl = process.env.SUPABASE_PASSWORD_RESET_REDIRECT_URL || 'http://localhost:3000/auth/reset-password';
 
-    const { error: supabaseError } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error: supabaseError } = await supabaseAnon.auth.resetPasswordForEmail(email, {
       redirectTo: redirectUrl,
     });
 
@@ -326,7 +326,7 @@ router.post("/verify", async (req, res) => {
     }
 
     // Verify token with Supabase
-    const { data: supabaseUser, error: supabaseError } = await supabase.auth.getUser(token);
+    const { data: supabaseUser, error: supabaseError } = await supabaseAnon.auth.getUser(token);
 
     if (supabaseError || !supabaseUser || !supabaseUser.user) {
       console.error("Supabase token validation error:", supabaseError);
@@ -365,7 +365,7 @@ router.post("/verify", async (req, res) => {
  *         description: Redirects to Google for authentication
  */
 router.get("/oauth/google", async (req, res) => {
-  const { data, error } = await supabase.auth.signInWithOAuth({
+  const { data, error } = await supabaseAnon.auth.signInWithOAuth({
     provider: 'google',
     options: {
       redirectTo: process.env.SUPABASE_OAUTH_REDIRECT_URL || 'http://localhost:3000/auth/callback', // Ensure this matches your Supabase redirect URL
@@ -420,7 +420,7 @@ router.get("/callback", async (req, res) => {
   }
 
   if (code) {
-    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error: exchangeError } = await supabaseAnon.auth.exchangeCodeForSession(code);
 
     if (exchangeError) {
       console.error("Supabase code exchange error:", exchangeError);
@@ -534,7 +534,7 @@ router.post("/reset-password", async (req, res) => {
     console.log('🔑 Token received:', token?.substring(0, 50) + '...');
 
     // ✅ Verify token with Supabase
-    const { data: supabaseUser, error: getUserError } = await supabase.auth.getUser(token);
+    const { data: supabaseUser, error: getUserError } = await supabaseAnon.auth.getUser(token);
 
     if (getUserError || !supabaseUser || !supabaseUser.user) {
       console.error("Supabase getUser error:", getUserError);
@@ -546,7 +546,7 @@ router.post("/reset-password", async (req, res) => {
     console.log('👤 Updating password for user:', supabaseUser.user.email);
 
     // ✅ Update user password using Supabase admin client
-    const { error: updateError } = await supabase.auth.admin.updateUserById(
+    const { error: updateError } = await supabaseServiceRole.auth.admin.updateUserById(
       supabaseUser.user.id,
       { password: newPassword }
     );
