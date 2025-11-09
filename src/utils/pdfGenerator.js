@@ -1,4 +1,5 @@
-const puppeteer = require("puppeteer-core"); // Use puppeteer-core for production environments
+const puppeteer = require("puppeteer-core");
+const chromium = require("@sparticuz/chromium"); // Import chromium for executable path and args
 const supabase = require("../config/supabase");
 
 // Helper functions for calculations
@@ -29,15 +30,10 @@ function calculateGrandTotal({
 
 const generateInvoicePdf = async (order, user) => {
   const browser = await puppeteer.launch({
-    headless: "new", // Use "new" for modern headless mode
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    // executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || puppeteer.executablePath(),
-    // For Render, you might need to set PUPPETEER_EXECUTABLE_PATH in your environment variables
-    // to point to the Chromium executable, e.g., /usr/bin/chromium or /usr/bin/google-chrome
-    // If not set, puppeteer-core will try to find a bundled Chromium or a globally installed one.
-    // The error message suggests /opt/render/.cache/puppeteer, so you might need to point to that.
-    // A common value for Render is '/usr/bin/chromium-browser' or '/usr/bin/google-chrome'
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser', // Fallback for common Render path
+    args: [...chromium.args, "--hide-scrollbars", "--disable-web-security"], // Use chromium's default args
+    executablePath: await chromium.executablePath(), // Use chromium's executable path
+    headless: "new", // Modern headless mode
+    ignoreHTTPSErrors: true, // Ignore HTTPS errors, common in some environments
   });
   const page = await browser.newPage();
   // Set navigation timeout to 0 (unlimited) or a higher value
