@@ -1,4 +1,4 @@
-const getUserOrderConfirmationEmail = (order, user) => {
+const getUserOrderConfirmationEmail = (order, user, invoicePdfUrl = null) => {
   let itemsHtml = '';
   order.items.forEach(item => {
     itemsHtml += `
@@ -20,6 +20,12 @@ const getUserOrderConfirmationEmail = (order, user) => {
       </div>
     `;
   });
+
+  const invoiceLinkHtml = invoicePdfUrl ? `
+    <div style="margin-top: 20px; text-align: center;">
+      <a href="${invoicePdfUrl}" style="background-color: #034C3C; color: #ffffff; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">Download Invoice PDF</a>
+    </div>
+  ` : '';
 
   const userTextContent = `
     Order Confirmation - Aharraa
@@ -53,6 +59,8 @@ const getUserOrderConfirmationEmail = (order, user) => {
         }
         return '';
     }).filter(Boolean).join('\n')}
+
+    ${invoicePdfUrl ? `Invoice PDF: ${invoicePdfUrl}` : ''}
 
     CREATED: ${new Date(order.createdAt).toLocaleString()}
     UPDATED: ${new Date(order.updatedAt).toLocaleString()}
@@ -91,6 +99,8 @@ const getUserOrderConfirmationEmail = (order, user) => {
 
             <div style="font-family:monospace; font-size:11px; color:#666; margin:20px 0 10px 0;">ORDER_ITEMS</div>
             ${itemsHtml}
+
+            ${invoiceLinkHtml}
 
             <div style="border:2px solid #000; padding:16px; margin:20px 0;">
               <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:12px;">ORDER_DATA</div>

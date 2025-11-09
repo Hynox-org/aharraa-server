@@ -108,126 +108,6 @@ const orderUpdateSchema = Joi.object({
   newEndDate: Joi.string().isoDate().optional(), // Top-level newEndDate for a specific item
 }).min(1); // At least one field must be present for update
 
-router.post("/email/test", async (req, res) => {
-  const { orderId } = req.body;
-  const order = await Order.findById(orderId)
-    .populate("userId")
-    .populate("items.meal._id")
-    .populate("items.plan._id")
-    .populate("items.vendor._id");
-
-  if (!order) {
-    console.error(`Order not found for ID: ${orderId}`);
-    return res.status(404).json({ message: "Order not found" });
-  }
-
-  // Update order status and payment details
-  // order.paymentDetails = {
-  //   cfPaymentId: cfPaymentId,
-  //   status: paymentStatus,
-  //   paymentTime: new Date(paymentTime),
-  //   bankReference: bankReference,
-  //   method: paymentData.payment_group, // Assuming payment_group is the method
-  // };
-  var paymentStatus = "SUCCESS";
-  if (paymentStatus === "SUCCESS") {
-    order.status = "confirmed";
-    order.paymentConfirmedAt = new Date();
-
-    // Fetch user and vendor details for email and invoice
-    const user = await User.findById(order.userId);
-    if (!user) {
-      console.error(`User not found for order ${orderId}`);
-      // Continue processing, but log the error
-    }
-
-    // Collect all unique vendor IDs from order items
-    const vendorIds = [
-      ...new Set(order.items.map((item) => item.vendor._id.toString())),
-    ];
-    const vendors = await Vendor.find({ _id: { $in: vendorIds } });
-
-    // Generate Invoice PDF
-    const invoicePdfBuffer = await generateInvoicePdf(order, user, vendors);
-
-    // Send Order Confirmation Email to User
-    if (user && user.email) {
-      const userEmailContent = getUserOrderConfirmationEmail(order, user);
-      try {
-        await sendEmail(
-          user.email,
-          `Order #${order._id} Confirmation - Aharraa`,
-          userEmailContent.text, // Pass text content
-          userEmailContent.html, // Pass HTML content
-          [
-            {
-              filename: `invoice_${order._id}.pdf`,
-              content: invoicePdfBuffer,
-              contentType: "application/pdf",
-            },
-          ]
-        );
-        console.log(
-          `Order confirmation email sent to user ${user.email} for order ${order._id}`
-        );
-      } catch (emailError) {
-        console.error(
-          `Failed to send order confirmation email to user ${user.email} for order ${order._id}:`,
-          emailError.message
-        );
-      }
-    } else {
-      console.warn(
-        `User email not available for order ${order._id}, skipping user email.`
-      );
-    }
-
-    // Send Order Notification Email to Vendors
-    for (const vendor of vendors) {
-      if (vendor.email) {
-        // Filter order items relevant to the current vendor
-        const vendorItems = order.items.filter(
-          (item) => item.vendor._id.toString() === vendor._id.toString()
-        );
-        const vendorEmailContent = getVendorOrderNotificationEmail(
-          order,
-          vendor,
-          vendorItems
-        );
-        try {
-          await sendEmail(
-            vendor.email,
-            `New Order #${order._id} Notification - Aharraa`,
-            vendorEmailContent.text, // Pass text content
-            vendorEmailContent.html // Pass HTML content
-          );
-          console.log(
-            `Order notification email sent to vendor ${vendor.email} for order ${order._id}`
-          );
-        } catch (emailError) {
-          console.error(
-            `Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`,
-            emailError.message
-          );
-        }
-      } else {
-        console.warn(
-          `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
-        );
-      }
-    }
-  } else if (paymentStatus === "FAILED") {
-    order.status = "failed";
-  } else {
-    // Handle other statuses if necessary, e.g., PENDING, REFUNDED
-    console.log(
-      `Webhook received for order ${orderId} with status: ${paymentStatus}. No status change applied.`
-    );
-  }
-
-  await order.save();
-  res.status(200).json({ message: "Okay" });
-});
 
 router.post("/webhook", async (req, res) => {
   const { type, data, event_time } = req.body;
@@ -253,9 +133,9 @@ router.post("/webhook", async (req, res) => {
 
       const order = await Order.findById(orderId)
         .populate("userId")
-        .populate("items.meal._id")
-        .populate("items.plan._id")
-        .populate("items.vendor._id");
+        .populate("items.meal")
+        .populate("items.plan")
+        .populate("items.vendor");
 
       if (!order) {
         console.error(`Order not found for ID: ${orderId}`);
@@ -270,6 +150,7 @@ router.post("/webhook", async (req, res) => {
         bankReference: bankReference,
         method: paymentData.payment_group, // Assuming payment_group is the method
       };
+      console.log(`Order ${orderId} payment details updated:`, order.paymentDetails);
 
       if (paymentStatus === "SUCCESS") {
         order.status = "confirmed";
@@ -288,25 +169,32 @@ router.post("/webhook", async (req, res) => {
         ];
         const vendors = await Vendor.find({ _id: { $in: vendorIds } });
 
-        // Generate Invoice PDF
-        const invoicePdfBuffer = await generateInvoicePdf(order, user, vendors);
+        // Generate Invoice PDF and get public URL
+        let invoicePdfUrl = null;
+        try {
+          invoicePdfUrl = await generateInvoicePdf(order, user);
+          order.invoiceUrl = invoicePdfUrl; // Save the invoice URL to the order
+          console.log(`Invoice PDF generated and uploaded: ${invoicePdfUrl}`);
+        } catch (pdfError) {
+          console.error(
+            `Failed to generate or upload invoice PDF for order ${order._id}:`,
+            pdfError
+          );
+        }
 
         // Send Order Confirmation Email to User
         if (user && user.email) {
-          const userEmailContent = getUserOrderConfirmationEmail(order, user);
+          const userEmailContent = getUserOrderConfirmationEmail(
+            order,
+            user,
+            invoicePdfUrl
+          );
           try {
             await sendEmail(
               user.email,
               `Order #${order._id} Confirmation - Aharraa`,
               userEmailContent.text, // Pass text content
-              userEmailContent.html, // Pass HTML content
-              [
-                {
-                  filename: `invoice_${order._id}.pdf`,
-                  content: invoicePdfBuffer,
-                  contentType: "application/pdf",
-                },
-              ]
+              userEmailContent.html // Pass HTML content
             );
             console.log(
               `Order confirmation email sent to user ${user.email} for order ${order._id}`
@@ -400,23 +288,14 @@ router.post("/", authMiddleware.protect, async (req, res) => {
     // Map checkoutData items to OrderItemSchema
     const orderItems = checkoutData.items.map((item) => ({
       id: item.id,
-      meal: {
-        _id: item.meal.id,
-        name: item.meal.name,
-      },
-      plan: {
-        _id: item.plan.id,
-        name: item.plan.name,
-      },
+      meal: item.meal.id,
+      plan: item.plan.id,
       quantity: item.quantity,
       personDetails: item.personDetails,
       startDate: new Date(item.startDate),
       endDate: new Date(item.endDate),
       itemTotalPrice: item.itemTotalPrice,
-      vendor: {
-        _id: item.vendor.id,
-        name: item.vendor.name,
-      },
+      vendor: item.vendor.id,
     }));
 
     order = new Order({
@@ -504,11 +383,7 @@ router.get("/", authMiddleware.protect, async (req, res) => {
   try {
     const userId = req.user.id; // Get userId from authenticated user
 
-    const orders = await Order.find({ userId: userId })
-      .populate("items.meal._id") // Populate the meal details
-      .populate("items.plan._id") // Populate the plan details
-      .populate("items.vendor._id") // Populate the vendor details
-      .sort({ orderDate: -1 });
+    const orders = await Order.find({ userId: userId }).sort({ orderDate: -1 });
 
     res.status(200).json(orders);
   } catch (error) {
@@ -625,10 +500,7 @@ router.get("/details/:orderId", authMiddleware.protect, async (req, res) => {
         .json({ message: "Order not found or invalid ID format" });
     }
 
-    const order = await Order.findById(orderId)
-      .populate("items.meal._id")
-      .populate("items.plan._id")
-      .populate("items.vendor._id");
+    const order = await Order.findById(orderId);
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
