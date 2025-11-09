@@ -29,13 +29,37 @@ function calculateGrandTotal({
 }
 
 const generateInvoicePdf = async (order, user) => {
-  const browser = await puppeteer.launch({
-    args: chromium.args, // Use only chromium's default args to avoid potential conflicts
-    executablePath: await chromium.executablePath(), // Use chromium's executable path
-    headless: "new", // Modern headless mode
-    ignoreHTTPSErrors: true, // Ignore HTTPS errors, common in some environments
-    userDataDir: '/tmp', // Explicitly set user data directory to /tmp for better compatibility in server environments
-  });
+  let browser;
+  if (process.env.SERVER_ENVIRONMENT === 'production') {
+    browser = await puppeteer.launch({
+      args: chromium.args, // Use only chromium's default args to avoid potential conflicts
+      executablePath: await chromium.executablePath(), // Use chromium's executable path
+      headless: "new", // Modern headless mode
+      ignoreHTTPSErrors: true, // Ignore HTTPS errors, common in some environments
+      userDataDir: '/tmp', // Explicitly set user data directory to /tmp for better compatibility in server environments
+    });
+  } else {
+    // For local development, assume a local Chrome/Chromium is available
+    // or puppeteer (not puppeteer-core) is installed to manage browser downloads.
+    // For local development, puppeteer-core requires an executablePath.
+    // We'll try common paths for Chrome/Chromium based on the OS.
+    const executablePath =
+      process.env.PUPPETEER_EXECUTABLE_PATH || // Allow user to specify via env var
+      (process.platform === 'win32' && 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe') ||
+      (process.platform === 'darwin' && '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome') ||
+      (process.platform === 'linux' && '/usr/bin/google-chrome');
+
+    if (!executablePath) {
+      console.error("No Chrome/Chromium executable found. Please install Chrome or set PUPPETEER_EXECUTABLE_PATH environment variable.");
+      throw new Error("No Chrome/Chromium executable found for development environment.");
+    }
+
+    browser = await puppeteer.launch({
+      executablePath: executablePath,
+      headless: "new", // Use 'new' headless mode
+      ignoreHTTPSErrors: true,
+    });
+  }
   const page = await browser.newPage();
   // Set navigation timeout to 0 (unlimited) or a higher value
   await page.setDefaultNavigationTimeout(0);

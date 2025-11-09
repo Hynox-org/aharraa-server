@@ -18,6 +18,12 @@ const {
   getUserOrderConfirmationEmail,
   getVendorOrderNotificationEmail,
 } = require("../utils/emailTemplates"); // Import email templates
+
+// Joi schema for the test endpoint
+const testEmailPdfSchema = Joi.object({
+  orderId: Joi.string().required(),
+});
+
 // Joi schema for address
 const addressSchema = Joi.object({
   street: Joi.string().required(),
@@ -268,6 +274,134 @@ router.post("/webhook", async (req, res) => {
     res
       .status(200)
       .json({ message: `Webhook type ${type} received, but not processed.` });
+  }
+});
+
+// POST /api/orders/test-email-pdf - Test endpoint to generate PDF and send email
+router.post("/test-email-pdf", async (req, res) => {
+  try {
+    const { error } = testEmailPdfSchema.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        error: "Bad Request",
+        details: `Validation failed: ${error.details[0].message}`,
+      });
+    }
+
+    const { orderId } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: "Invalid order ID format" });
+    }
+
+    const order = await Order.findById(orderId)
+      .populate("userId")
+      .populate("items.meal")
+      .populate("items.plan")
+      .populate("items.vendor");
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    const user = await User.findById(order.userId);
+    if (!user) {
+      console.error(`User not found for order ${orderId}`);
+      return res.status(404).json({ message: "User not found for the order" });
+    }
+
+    // Collect all unique vendor IDs from order items
+    const vendorIds = [
+      ...new Set(order.items.map((item) => item.vendor._id.toString())),
+    ];
+    const vendors = await Vendor.find({ _id: { $in: vendorIds } });
+
+    // Generate Invoice PDF and get public URL
+    let invoicePdfUrl = null;
+    try {
+      invoicePdfUrl = await generateInvoicePdf(order, user);
+      order.invoiceUrl = invoicePdfUrl; // Save the invoice URL to the order
+      await order.save(); // Save the order with the invoice URL
+      console.log(`Invoice PDF generated and uploaded: ${invoicePdfUrl}`);
+    } catch (pdfError) {
+      console.error(
+        `Failed to generate or upload invoice PDF for order ${order._id}:`,
+        pdfError
+      );
+      return res.status(500).json({ message: "Failed to generate invoice PDF" });
+    }
+
+    // Send Order Confirmation Email to User
+    if (user && user.email) {
+      const userEmailContent = getUserOrderConfirmationEmail(
+        order,
+        user,
+        invoicePdfUrl
+      );
+      try {
+        await sendEmail(
+          user.email,
+          `Order #${order._id} Confirmation - Aharraa (Test)`,
+          userEmailContent.text,
+          userEmailContent.html
+        );
+        console.log(
+          `Test order confirmation email sent to user ${user.email} for order ${order._id}`
+        );
+      } catch (emailError) {
+        console.error(
+          `Failed to send test order confirmation email to user ${user.email} for order ${order._id}:`,
+          emailError.message
+        );
+        return res.status(500).json({ message: "Failed to send email" });
+      }
+    } else {
+      return res.status(400).json({ message: "User email not available" });
+    }
+
+    // Send Order Notification Email to Vendors
+    for (const vendor of vendors) {
+      if (vendor.email) {
+        // Filter order items relevant to the current vendor
+        const vendorItems = order.items.filter(
+          (item) => item.vendor._id.toString() === vendor._id.toString()
+        );
+        const vendorEmailContent = getVendorOrderNotificationEmail(
+          order,
+          vendor,
+          vendorItems
+        );
+        try {
+          await sendEmail(
+            vendor.email,
+            `New Order #${order._id} Notification - Aharraa (Test)`,
+            vendorEmailContent.text, // Pass text content
+            vendorEmailContent.html // Pass HTML content
+          );
+          console.log(
+            `Test order notification email sent to vendor ${vendor.email} for order ${order._id}`
+          );
+        } catch (emailError) {
+          console.error(
+            `Failed to send test order notification email to vendor ${vendor.email} for order ${order._id}:`,
+            emailError.message
+          );
+          // Do not return here, continue to send to other vendors
+        }
+      } else {
+        console.warn(
+          `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
+        );
+      }
+    }
+
+    res.status(200).json({
+      message: "Test PDF generated and email sent successfully",
+      invoiceUrl: invoicePdfUrl,
+    });
+  } catch (error) {
+    console.error("Error in test-email-pdf endpoint:", error);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
 
