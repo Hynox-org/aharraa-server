@@ -13,6 +13,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@getbrevo/brevo": "^3.0.1",
     "@sendgrid/mail": "^8.1.6",
     "@sparticuz/chromium": "^141.0.0",
     "@supabase/supabase-js": "^2.31.0",

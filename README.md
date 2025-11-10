@@ -14,7 +14,7 @@ Files created:
 - `.env.example` - Environment variable template
 
 Quick start
-1. Copy `.env.example` to `.env` and fill in values (especially `MONGO_URI`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY`).
+1. Copy `.env.example` to `.env` and fill in values (especially `MONGO_URI`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `BREVO_API_KEY`, `BREVO_FROM_EMAIL`).
 2. Install dependencies:
 
 ```powershell
@@ -42,4 +42,3 @@ Next steps (suggested)
 - Add refresh token handling and cookie/session management for browser clients
 - Add proper error mapping and input validation (e.g. using Joi or Zod)
 - Implement webhooks to sync user updates from Supabase to MongoDB if needed
-

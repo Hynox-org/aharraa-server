@@ -1,16 +1,26 @@
-const sgMail = require('@sendgrid/mail');
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
+const { TransactionalEmailsApi, SendSmtpEmail } = require("@getbrevo/brevo");
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// Brevo API initialization
+const brevoEmailAPI = new TransactionalEmailsApi();
+if (process.env.BREVO_API_KEY) {
+  brevoEmailAPI.setApiKey(0, process.env.BREVO_API_KEY);
+} else {
+  console.warn(
+    "Brevo API is not configured. Please set BREVO_API_KEY environment variable."
+  );
+}
 
 // Nodemailer transporter setup for Gmail fallback
 const createNodemailerTransporter = () => {
   if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
-    console.warn("Nodemailer (Gmail) fallback is not fully configured. Please set GMAIL_USER and GMAIL_PASS environment variables.");
+    console.warn(
+      "Nodemailer (Gmail) fallback is not fully configured. Please set GMAIL_USER and GMAIL_PASS environment variables."
+    );
     return null;
   }
   return nodemailer.createTransport({
-    service: 'gmail',
+    service: "gmail",
     auth: {
       user: process.env.GMAIL_USER,
       pass: process.env.GMAIL_PASS,
@@ -28,39 +38,44 @@ const sendEmail = async (
   htmlContent,
   attachments = []
 ) => {
-  const sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
+  const brevoFromEmail = process.env.BREVO_FROM_EMAIL || "noreply@aharraa.com"; // Default or configurable Brevo sender
   const gmailFromEmail = process.env.GMAIL_USER || "info.aharraa@gmail.com";
 
-  // Try SendGrid first
-  if (sendgridFromEmail && process.env.SENDGRID_API_KEY) {
+  // Try Brevo first
+  if (process.env.BREVO_API_KEY) {
     try {
-      const msg = {
-        to,
-        from: sendgridFromEmail,
-        subject,
-        text: textContent,
-        html: htmlContent,
-        attachments: attachments.map(attachment => ({
-          content: attachment.content.toString('base64'),
-          filename: attachment.filename,
-          type: attachment.contentType,
-          disposition: 'attachment',
-          contentId: attachment.cid,
-        })),
-      };
+      const sendSmtpEmail = new SendSmtpEmail();
+      sendSmtpEmail.sender = { email: brevoFromEmail };
+      sendSmtpEmail.to = [{ email: to }];
+      sendSmtpEmail.subject = subject;
+      sendSmtpEmail.textContent = textContent;
+      sendSmtpEmail.htmlContent = htmlContent;
 
-      await sgMail.send(msg);
-      console.log(`Email sent via SendGrid to ${to} with subject: ${subject}`);
-      return; // Email sent successfully via SendGrid
-    } catch (sendgridError) {
+      // Only add attachment field if there are attachments
+      if (attachments && attachments.length > 0) {
+        sendSmtpEmail.attachment = attachments.map((attachment) => ({
+          content: attachment.content.toString("base64"),
+          name: attachment.filename,
+        }));
+      }
+
+      await brevoEmailAPI.sendTransacEmail(sendSmtpEmail);
+      console.log(`Email sent via Brevo to ${to} with subject: ${subject}`);
+      return;
+    } catch (brevoError) {
       console.error(
-        `Error sending email via SendGrid to ${to} with subject "${subject}":`,
-        sendgridError.response ? sendgridError.response.body.errors : sendgridError
+        `Error sending email via Brevo to ${to} with subject "${subject}":`,
+        brevoError // Log the entire error object for detailed debugging
       );
+      if (brevoError.response && brevoError.response.body) {
+        console.error("Brevo API Error Details:", brevoError.response.body);
+      }
       console.warn("Attempting to send email via Nodemailer (Gmail) fallback...");
     }
   } else {
-    console.warn("SendGrid is not fully configured (missing SENDGRID_FROM_EMAIL or SENDGRID_API_KEY). Attempting Nodemailer (Gmail) fallback...");
+    console.warn(
+      "Brevo is not fully configured (missing BREVO_API_KEY). Attempting Nodemailer (Gmail) fallback..."
+    );
   }
 
   // Fallback to Nodemailer (Gmail)
