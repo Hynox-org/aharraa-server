@@ -6,6 +6,7 @@ const Meal = require('../models/Meal');
 const Plan = require('../models/Plan');
 const { protect } = require('../middleware/auth');
 const moment = require('moment'); // For date calculations
+const { model } = require('mongoose');
 
 const router = express.Router();
 
@@ -14,6 +15,7 @@ const cartItemAddSchema = Joi.object({
   planId: Joi.string().required(),
   quantity: Joi.number().integer().min(1).required(),
   startDate: Joi.string().isoDate().required(),
+  endDate: Joi.string().isoDate().optional(),
   personDetails: Joi.array().items(Joi.object({
     name: Joi.string().required(),
     phoneNumber: Joi.string().required(),
@@ -86,7 +88,18 @@ router.get('/:userId', protect, async (req, res) => {
 
     let cart = await Cart.findOne({ userId: req.params.userId }).populate({
       path: 'items',
-      populate: [{ path: 'meal' }, { path: 'plan' }]
+      populate: [
+        { path: 'meal', 
+          populate: {
+            path: 'vendorId',
+            model: 'Vendor',
+        }}, 
+       {
+          path: 'plan',
+          model: 'Plan',
+          select: '_id name durationDays price createdAt updatedAt __v',
+        }
+      ]
     });
 
     if (!cart) {
@@ -94,7 +107,16 @@ router.get('/:userId', protect, async (req, res) => {
       cart = new Cart({ userId: req.params.userId, items: [], totalItems: 0, cartTotalPrice: 0 });
       await cart.save();
     }
-
+    if (cart && cart.items?.length) {
+      cart.items = cart.items.map((item) => {
+        if (item.meal?.vendorId) {
+          // attach vendor info directly
+          item.meal.vendor = item.meal.vendorId;
+        }
+        return item;
+      });
+    }
+    console.log("Cart fetched:", cart);
     res.status(200).json(cart);
   } catch (error) {
     console.error('Error fetching cart:', error);
@@ -164,16 +186,22 @@ router.get('/:userId', protect, async (req, res) => {
  */
 router.post('/:userId/add', protect, async (req, res) => {
   try {
-    if (req.user._id.toString() !== req.params.userId) {
+    const { userId } = req.params;
+    const { mealId, planId, quantity, startDate, personDetails } = req.body;
+
+    console.log('Incoming body:', req.body);
+    console.log('Authenticated user:', req.user._id.toString(), 'Param user:', userId);
+
+    //  Authorization Check
+    if (req.user._id.toString() !== userId) {
       return res.status(403).json({ message: 'Unauthorized access to cart' });
     }
 
+    //  Validate request body
     const { error: validationError } = cartItemAddSchema.validate(req.body);
     if (validationError) {
       return res.status(400).json({ message: validationError.details[0].message });
     }
-
-    const { mealId, planId, quantity, startDate, personDetails } = req.body;
 
     const meal = await Meal.findById(mealId);
     const plan = await Plan.findById(planId);
@@ -182,33 +210,33 @@ router.post('/:userId/add', protect, async (req, res) => {
       return res.status(400).json({ message: 'Invalid mealId or planId' });
     }
 
-    let cart = await Cart.findOne({ userId: req.params.userId });
+    //  Fetch or create user's cart
+    let cart = await Cart.findOne({ userId });
     if (!cart) {
-      cart = new Cart({ userId: req.params.userId, items: [] });
+      cart = new Cart({ userId, items: [] });
     }
 
-    const existingCartItem = await CartItem.findOne({
-      userId: req.params.userId,
+    //  Check for existing cart item
+    let existingCartItem = await CartItem.findOne({
+      userId,
       meal: mealId,
       plan: planId,
       startDate: new Date(startDate),
     });
 
     if (existingCartItem) {
-      // Update quantity of existing item
+      //  Update existing cart item
       existingCartItem.quantity += quantity;
       existingCartItem.itemTotalPrice = existingCartItem.quantity * meal.price * plan.durationDays;
-      if (personDetails) {
-        existingCartItem.personDetails = personDetails;
-      }
+      if (personDetails) existingCartItem.personDetails = personDetails;
       await existingCartItem.save();
     } else {
-      // Add new item
+      //  Create new cart item
       const endDate = moment(startDate).add(plan.durationDays - 1, 'days').toDate();
       const itemTotalPrice = quantity * meal.price * plan.durationDays;
 
       const newCartItem = new CartItem({
-        userId: req.params.userId,
+        userId,
         meal: mealId,
         plan: planId,
         quantity,
@@ -218,20 +246,28 @@ router.post('/:userId/add', protect, async (req, res) => {
         itemTotalPrice,
         addedDate: Date.now(),
       });
+
       await newCartItem.save();
       cart.items.push(newCartItem._id);
     }
 
+    // ✅ Remove invalid/deleted items if necessary
+    cart.items = cart.items.filter(Boolean);
+
+    // ✅ Recalculate totals and populate details
     const updatedCart = await calculateCartTotals(cart);
     await updatedCart.populate({
       path: 'items',
-      populate: [{ path: 'meal' }, { path: 'plan' }]
+      populate: [{ path: 'meal' }, { path: 'plan' }],
     });
 
+    // ✅ Save and send response
+    await updatedCart.save();
     res.status(200).json(updatedCart);
+
   } catch (error) {
     console.error('Error adding/updating cart item:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    res.status(500).json({ message: 'Internal server error', error: error.message });
   }
 });
 
@@ -449,6 +485,7 @@ router.put('/:userId/update-person-details/:cartItemId', protect, async (req, re
  *         description: Internal server error
  */
 router.delete('/:userId/remove/:cartItemId', protect, async (req, res) => {
+  console.log('Removing cart item:', req.params.cartItemId, 'for user:', req.params.userId);
   try {
     if (req.user._id.toString() !== req.params.userId) {
       return res.status(403).json({ message: 'Unauthorized access to cart' });
@@ -507,10 +544,10 @@ router.delete('/:userId/remove/:cartItemId', protect, async (req, res) => {
  */
 router.delete('/:userId/clear', protect, async (req, res) => {
   try {
+    console.log('Clearing cart for user:', req.params.userId);
     if (req.user._id.toString() !== req.params.userId) {
       return res.status(403).json({ message: 'Unauthorized access to cart' });
     }
-
     const cart = await Cart.findOne({ userId: req.params.userId });
     if (cart) {
       // Delete all associated CartItems
