@@ -20,7 +20,7 @@ const PersonDetailsSchema = new mongoose.Schema(
 const OrderItemSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
-    meal: { type: mongoose.Schema.Types.ObjectId, ref: "Meal", required: true },
+    menu: { type: mongoose.Schema.Types.ObjectId, ref: "Menu", required: true },
     plan: { type: mongoose.Schema.Types.ObjectId, ref: "Plan", required: true },
     quantity: { type: Number, required: true },
     personDetails: [{ type: PersonDetailsSchema }],
@@ -38,7 +38,7 @@ const OrderItemSchema = new mongoose.Schema(
 );
 
 const OrderSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   items: [{ type: OrderItemSchema, required: true }],
   paymentMethod: { type: String, required: true },
   totalAmount: { type: Number, required: true },

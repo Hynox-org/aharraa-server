@@ -1,25 +1,28 @@
-const express = require('express');
-const Joi = require('joi');
-const Cart = require('../models/Cart');
-const CartItem = require('../models/CartItem');
-const Meal = require('../models/Meal');
-const Plan = require('../models/Plan');
-const { protect } = require('../middleware/auth');
-const moment = require('moment'); // For date calculations
-const { model } = require('mongoose');
+const express = require("express");
+const Joi = require("joi");
+const Cart = require("../models/Cart");
+const CartItem = require("../models/CartItem");
+const Menu = require("../models/Menu");
+const Plan = require("../models/Plan");
+const { protect } = require("../middleware/auth");
+const moment = require("moment"); // For date calculations
 
 const router = express.Router();
 
 const cartItemAddSchema = Joi.object({
-  mealId: Joi.string().required(),
+  menuId: Joi.string().required(),
   planId: Joi.string().required(),
   quantity: Joi.number().integer().min(1).required(),
   startDate: Joi.string().isoDate().required(),
   endDate: Joi.string().isoDate().optional(),
-  personDetails: Joi.array().items(Joi.object({
-    name: Joi.string().required(),
-    phoneNumber: Joi.string().required(),
-  })).optional(),
+  personDetails: Joi.array()
+    .items(
+      Joi.object({
+        name: Joi.string().required(),
+        phoneNumber: Joi.string().required(),
+      })
+    )
+    .optional(),
 });
 
 const cartItemUpdateQuantitySchema = Joi.object({
@@ -27,10 +30,14 @@ const cartItemUpdateQuantitySchema = Joi.object({
 });
 
 const cartItemUpdatePersonDetailsSchema = Joi.object({
-  personDetails: Joi.array().items(Joi.object({
-    name: Joi.string().required(),
-    phoneNumber: Joi.string().required(),
-  })).required(),
+  personDetails: Joi.array()
+    .items(
+      Joi.object({
+        name: Joi.string().required(),
+        phoneNumber: Joi.string().required(),
+      })
+    )
+    .required(),
 });
 
 // Helper function to calculate cart totals
@@ -39,7 +46,7 @@ const calculateCartTotals = async (cart) => {
   let cartTotalPrice = 0;
 
   for (const itemId of cart.items) {
-    const item = await CartItem.findById(itemId).populate('meal plan');
+    const item = await CartItem.findById(itemId).populate("menu plan");
     if (item) {
       totalItems += item.quantity;
       cartTotalPrice += item.itemTotalPrice;
@@ -80,38 +87,44 @@ const calculateCartTotals = async (cart) => {
  *       500:
  *         description: Internal server error
  */
-router.get('/:userId', protect, async (req, res) => {
+router.get("/:userId", protect, async (req, res) => {
   try {
     if (req.user._id.toString() !== req.params.userId) {
-      return res.status(403).json({ message: 'Unauthorized access to cart' });
+      return res.status(403).json({ message: "Unauthorized access to cart" });
     }
 
-    let cart = await Cart.findOne({ userId: req.params.userId }).populate({
-      path: 'items',
+    let cart = await Cart.findOne({ user: req.params.userId }).populate({
+      path: "items",
       populate: [
-        { path: 'meal', 
+        {
+          path: "menu",
           populate: {
-            path: 'vendorId',
-            model: 'Vendor',
-        }}, 
-       {
-          path: 'plan',
-          model: 'Plan',
-          select: '_id name durationDays price createdAt updatedAt __v',
-        }
-      ]
+            path: "vendor",
+            model: "Vendor",
+          },
+        },
+        {
+          path: "plan",
+          model: "Plan",
+        },
+      ],
     });
 
     if (!cart) {
       // If no cart exists, return an empty cart
-      cart = new Cart({ userId: req.params.userId, items: [], totalItems: 0, cartTotalPrice: 0 });
+      cart = new Cart({
+        user: req.params.userId,
+        items: [],
+        totalItems: 0,
+        cartTotalPrice: 0,
+      });
       await cart.save();
     }
     if (cart && cart.items?.length) {
       cart.items = cart.items.map((item) => {
-        if (item.meal?.vendorId) {
-          // attach vendor info directly
-          item.meal.vendor = item.meal.vendorId;
+        if (item.menu?.vendor) {
+          // The vendor is already populated, no need for self-assignment.
+          // If there was a specific reason to re-assign or transform, it should be done here.
         }
         return item;
       });
@@ -119,8 +132,8 @@ router.get('/:userId', protect, async (req, res) => {
     console.log("Cart fetched:", cart);
     res.status(200).json(cart);
   } catch (error) {
-    console.error('Error fetching cart:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error("Error fetching cart:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -147,12 +160,12 @@ router.get('/:userId', protect, async (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - mealId
+ *               - menuId
  *               - planId
  *               - quantity
  *               - startDate
  *             properties:
- *               mealId:
+ *               menuId:
  *                 type: string
  *               planId:
  *                 type: string
@@ -184,42 +197,49 @@ router.get('/:userId', protect, async (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.post('/:userId/add', protect, async (req, res) => {
+router.post("/:userId/add", protect, async (req, res) => {
   try {
     const { userId } = req.params;
-    const { mealId, planId, quantity, startDate, personDetails } = req.body;
+    const { menuId, planId, quantity, startDate, personDetails } = req.body;
 
-    console.log('Incoming body:', req.body);
-    console.log('Authenticated user:', req.user._id.toString(), 'Param user:', userId);
+    console.log("Incoming body:", req.body);
+    console.log(
+      "Authenticated user:",
+      req.user._id.toString(),
+      "Param user:",
+      userId
+    );
 
     //  Authorization Check
     if (req.user._id.toString() !== userId) {
-      return res.status(403).json({ message: 'Unauthorized access to cart' });
+      return res.status(403).json({ message: "Unauthorized access to cart" });
     }
 
     //  Validate request body
     const { error: validationError } = cartItemAddSchema.validate(req.body);
     if (validationError) {
-      return res.status(400).json({ message: validationError.details[0].message });
+      return res
+        .status(400)
+        .json({ message: validationError.details[0].message });
     }
 
-    const meal = await Meal.findById(mealId);
+    const menu = await Menu.findById(menuId);
     const plan = await Plan.findById(planId);
 
-    if (!meal || !plan) {
-      return res.status(400).json({ message: 'Invalid mealId or planId' });
+    if (!menu || !plan) {
+      return res.status(400).json({ message: "Invalid menuId or planId" });
     }
 
     //  Fetch or create user's cart
-    let cart = await Cart.findOne({ userId });
+    let cart = await Cart.findOne({ user: userId });
     if (!cart) {
-      cart = new Cart({ userId, items: [] });
+      cart = new Cart({ user: userId, items: [] });
     }
 
     //  Check for existing cart item
     let existingCartItem = await CartItem.findOne({
-      userId,
-      meal: mealId,
+      user: userId,
+      menu: menuId,
       plan: planId,
       startDate: new Date(startDate),
     });
@@ -227,17 +247,20 @@ router.post('/:userId/add', protect, async (req, res) => {
     if (existingCartItem) {
       //  Update existing cart item
       existingCartItem.quantity += quantity;
-      existingCartItem.itemTotalPrice = existingCartItem.quantity * meal.price * plan.durationDays;
+      existingCartItem.itemTotalPrice =
+        existingCartItem.quantity * menu.perDayPrice * plan.durationDays;
       if (personDetails) existingCartItem.personDetails = personDetails;
       await existingCartItem.save();
     } else {
       //  Create new cart item
-      const endDate = moment(startDate).add(plan.durationDays - 1, 'days').toDate();
-      const itemTotalPrice = quantity * meal.price * plan.durationDays;
+      const endDate = moment(startDate)
+        .add(plan.durationDays - 1, "days")
+        .toDate();
+      const itemTotalPrice = quantity * menu.perDayPrice * plan.durationDays;
 
       const newCartItem = new CartItem({
-        userId,
-        meal: mealId,
+        user: userId,
+        menu: menuId,
         plan: planId,
         quantity,
         personDetails: personDetails || [],
@@ -257,17 +280,18 @@ router.post('/:userId/add', protect, async (req, res) => {
     // ✅ Recalculate totals and populate details
     const updatedCart = await calculateCartTotals(cart);
     await updatedCart.populate({
-      path: 'items',
-      populate: [{ path: 'meal' }, { path: 'plan' }],
+      path: "items",
+      populate: [{ path: "menu" }, { path: "plan" }],
     });
 
     // ✅ Save and send response
     await updatedCart.save();
     res.status(200).json(updatedCart);
-
   } catch (error) {
-    console.error('Error adding/updating cart item:', error);
-    res.status(500).json({ message: 'Internal server error', error: error.message });
+    console.error("Error adding/updating cart item:", error);
+    res
+      .status(500)
+      .json({ message: "Internal server error", error: error.message });
   }
 });
 
@@ -321,41 +345,55 @@ router.post('/:userId/add', protect, async (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.put('/:userId/update-quantity/:cartItemId', protect, async (req, res) => {
-  try {
-    if (req.user._id.toString() !== req.params.userId) {
-      return res.status(403).json({ message: 'Unauthorized access to cart' });
+router.put(
+  "/:userId/update-quantity/:cartItemId",
+  protect,
+  async (req, res) => {
+    try {
+      if (req.user._id.toString() !== req.params.userId) {
+        return res.status(403).json({ message: "Unauthorized access to cart" });
+      }
+
+      const { error: validationError } = cartItemUpdateQuantitySchema.validate(
+        req.body
+      );
+      if (validationError) {
+        return res
+          .status(400)
+          .json({ message: validationError.details[0].message });
+      }
+
+      const { quantity } = req.body;
+
+      const cartItem = await CartItem.findOne({
+        _id: req.params.cartItemId,
+        user: req.params.userId,
+      }).populate("menu plan");
+      if (!cartItem) {
+        return res.status(404).json({ message: "Cart item not found" });
+      }
+
+      cartItem.quantity = quantity;
+      cartItem.itemTotalPrice =
+        cartItem.quantity *
+        cartItem.menu.perDayPrice *
+        cartItem.plan.durationDays;
+      await cartItem.save();
+
+      const cart = await Cart.findOne({ user: req.params.userId });
+      const updatedCart = await calculateCartTotals(cart);
+      await updatedCart.populate({
+        path: "items",
+        populate: [{ path: "menu" }, { path: "plan" }],
+      });
+
+      res.status(200).json(updatedCart);
+    } catch (error) {
+      console.error("Error updating cart item quantity:", error);
+      res.status(500).json({ message: "Internal server error" });
     }
-
-    const { error: validationError } = cartItemUpdateQuantitySchema.validate(req.body);
-    if (validationError) {
-      return res.status(400).json({ message: validationError.details[0].message });
-    }
-
-    const { quantity } = req.body;
-
-    const cartItem = await CartItem.findOne({ _id: req.params.cartItemId, userId: req.params.userId }).populate('meal plan');
-    if (!cartItem) {
-      return res.status(404).json({ message: 'Cart item not found' });
-    }
-
-    cartItem.quantity = quantity;
-    cartItem.itemTotalPrice = cartItem.quantity * cartItem.meal.price * cartItem.plan.durationDays;
-    await cartItem.save();
-
-    const cart = await Cart.findOne({ userId: req.params.userId });
-    const updatedCart = await calculateCartTotals(cart);
-    await updatedCart.populate({
-      path: 'items',
-      populate: [{ path: 'meal' }, { path: 'plan' }]
-    });
-
-    res.status(200).json(updatedCart);
-  } catch (error) {
-    console.error('Error updating cart item quantity:', error);
-    res.status(500).json({ message: 'Internal server error' });
   }
-});
+);
 
 /**
  * @openapi
@@ -413,40 +451,50 @@ router.put('/:userId/update-quantity/:cartItemId', protect, async (req, res) => 
  *       500:
  *         description: Internal server error
  */
-router.put('/:userId/update-person-details/:cartItemId', protect, async (req, res) => {
-  try {
-    if (req.user._id.toString() !== req.params.userId) {
-      return res.status(403).json({ message: 'Unauthorized access to cart' });
+router.put(
+  "/:userId/update-person-details/:cartItemId",
+  protect,
+  async (req, res) => {
+    try {
+      if (req.user._id.toString() !== req.params.userId) {
+        return res.status(403).json({ message: "Unauthorized access to cart" });
+      }
+
+      const { error: validationError } =
+        cartItemUpdatePersonDetailsSchema.validate(req.body);
+      if (validationError) {
+        return res
+          .status(400)
+          .json({ message: validationError.details[0].message });
+      }
+
+      const { personDetails } = req.body;
+
+      const cartItem = await CartItem.findOne({
+        _id: req.params.cartItemId,
+        user: req.params.userId,
+      });
+      if (!cartItem) {
+        return res.status(404).json({ message: "Cart item not found" });
+      }
+
+      cartItem.personDetails = personDetails;
+      await cartItem.save();
+
+      const cart = await Cart.findOne({ user: req.params.userId });
+      const updatedCart = await calculateCartTotals(cart);
+      await updatedCart.populate({
+        path: "items",
+        populate: [{ path: "menu" }, { path: "plan" }],
+      });
+
+      res.status(200).json(updatedCart);
+    } catch (error) {
+      console.error("Error updating cart item person details:", error);
+      res.status(500).json({ message: "Internal server error" });
     }
-
-    const { error: validationError } = cartItemUpdatePersonDetailsSchema.validate(req.body);
-    if (validationError) {
-      return res.status(400).json({ message: validationError.details[0].message });
-    }
-
-    const { personDetails } = req.body;
-
-    const cartItem = await CartItem.findOne({ _id: req.params.cartItemId, userId: req.params.userId });
-    if (!cartItem) {
-      return res.status(404).json({ message: 'Cart item not found' });
-    }
-
-    cartItem.personDetails = personDetails;
-    await cartItem.save();
-
-    const cart = await Cart.findOne({ userId: req.params.userId });
-    const updatedCart = await calculateCartTotals(cart);
-    await updatedCart.populate({
-      path: 'items',
-      populate: [{ path: 'meal' }, { path: 'plan' }]
-    });
-
-    res.status(200).json(updatedCart);
-  } catch (error) {
-    console.error('Error updating cart item person details:', error);
-    res.status(500).json({ message: 'Internal server error' });
   }
-});
+);
 
 /**
  * @openapi
@@ -484,33 +532,47 @@ router.put('/:userId/update-person-details/:cartItemId', protect, async (req, re
  *       500:
  *         description: Internal server error
  */
-router.delete('/:userId/remove/:cartItemId', protect, async (req, res) => {
-  console.log('Removing cart item:', req.params.cartItemId, 'for user:', req.params.userId);
+router.delete("/:userId/remove/:cartItemId", protect, async (req, res) => {
+  console.log(
+    "Removing cart item:",
+    req.params.cartItemId,
+    "for user:",
+    req.params.userId
+  );
   try {
     if (req.user._id.toString() !== req.params.userId) {
-      return res.status(403).json({ message: 'Unauthorized access to cart' });
+      return res.status(403).json({ message: "Unauthorized access to cart" });
     }
 
-    const cartItem = await CartItem.findOneAndDelete({ _id: req.params.cartItemId, userId: req.params.userId });
+    const cartItem = await CartItem.findOneAndDelete({
+      _id: req.params.cartItemId,
+      user: req.params.userId,
+    });
     if (!cartItem) {
-      return res.status(404).json({ message: 'Cart item not found' });
+      return res.status(404).json({ message: "Cart item not found" });
     }
 
-    const cart = await Cart.findOne({ userId: req.params.userId });
+    const cart = await Cart.findOne({ user: req.params.userId });
     if (cart) {
-      cart.items = cart.items.filter(item => item.toString() !== req.params.cartItemId);
+      cart.items = cart.items.filter(
+        (item) => item.toString() !== req.params.cartItemId
+      );
       const updatedCart = await calculateCartTotals(cart);
       await updatedCart.populate({
-        path: 'items',
-        populate: [{ path: 'meal' }, { path: 'plan' }]
+        path: "items",
+        populate: [{ path: "menu" }, { path: "plan" }],
       });
       return res.status(200).json(updatedCart);
     }
 
-    res.status(200).json({ message: 'Cart item removed, but cart not found (should not happen)' });
+    res
+      .status(200)
+      .json({
+        message: "Cart item removed, but cart not found (should not happen)",
+      });
   } catch (error) {
-    console.error('Error removing cart item:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error("Error removing cart item:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -542,21 +604,21 @@ router.delete('/:userId/remove/:cartItemId', protect, async (req, res) => {
  *       500:
  *         description: Internal server error
  */
-router.delete('/:userId/clear', protect, async (req, res) => {
+router.delete("/:userId/clear", protect, async (req, res) => {
   try {
-    console.log('Clearing cart for user:', req.params.userId);
+    console.log("Clearing cart for user:", req.params.userId);
     if (req.user._id.toString() !== req.params.userId) {
-      return res.status(403).json({ message: 'Unauthorized access to cart' });
+      return res.status(403).json({ message: "Unauthorized access to cart" });
     }
-    const cart = await Cart.findOne({ userId: req.params.userId });
+    const cart = await Cart.findOne({ user: req.params.userId });
     if (cart) {
       // Delete all associated CartItems
       await CartItem.deleteMany({ _id: { $in: cart.items } });
       cart.items = [];
       const updatedCart = await calculateCartTotals(cart);
       await updatedCart.populate({
-        path: 'items',
-        populate: [{ path: 'meal' }, { path: 'plan' }]
+        path: "items",
+        populate: [{ path: "menu" }, { path: "plan" }],
       });
       return res.status(200).json(updatedCart);
     }
@@ -571,8 +633,61 @@ router.delete('/:userId/clear', protect, async (req, res) => {
       lastUpdated: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Error clearing cart:', error);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error("Error clearing cart:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * @openapi
+ * /api/cart/{userId}/quantity:
+ *   get:
+ *     summary: Retrieve the total quantity of items in the user's cart.
+ *     tags:
+ *       - Cart
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         schema:
+ *           type: string
+ *         required: true
+ *         description: User ID
+ *     responses:
+ *       200:
+ *         description: The total number of items in the user's cart.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalItems:
+ *                   type: number
+ *                   description: Total quantity of items in the cart.
+ *       403:
+ *         description: Unauthorized access to cart
+ *       404:
+ *         description: Cart not found for user
+ *       500:
+ *         description: Internal server error
+ */
+router.get("/:userId/quantity", protect, async (req, res) => {
+  try {
+    if (req.user._id.toString() !== req.params.userId) {
+      return res.status(403).json({ message: "Unauthorized access to cart" });
+    }
+
+    const cart = await Cart.findOne({ user: req.params.userId });
+
+    if (!cart) {
+      return res.status(404).json({ message: "Cart not found for user" });
+    }
+
+    res.status(200).json({ totalItems: cart.totalItems });
+  } catch (error) {
+    console.error("Error fetching cart quantity:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 

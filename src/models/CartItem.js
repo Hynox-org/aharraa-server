@@ -6,8 +6,8 @@ const PersonDetailsSchema = new mongoose.Schema({
 }, { _id: false });
 
 const CartItemSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  meal: { type: mongoose.Schema.Types.ObjectId, ref: 'Meal', required: true },
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  menu: { type: mongoose.Schema.Types.ObjectId, ref: 'Menu', required: true },
   plan: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan', required: true },
   quantity: { type: Number, required: true, default: 1 },
   personDetails: [{ type: PersonDetailsSchema }],

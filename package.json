@@ -3,11 +3,12 @@
   "version": "0.1.0",
   "description": "Basic Node.js server with MongoDB and Supabase authentication (email/password + Google OAuth)",
   "main": "src/index.js",
-  "scripts": {
+"scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "jest --runInBand",
-    "generate-docs": "node src/swagger.js"
+    "generate-docs": "node src/swagger.js",
+    "lint": "eslint src/**/*.js"
   },
   "keywords": [],
   "author": "",
@@ -40,6 +41,7 @@
     "swagger-ui-express": "^4.6.3"
   },
   "devDependencies": {
+    "eslint": "^9.39.1",
     "jest": "^29.7.0",
     "nodemon": "^2.0.22",
     "supertest": "^6.3.4"

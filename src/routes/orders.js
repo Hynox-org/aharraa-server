@@ -41,26 +41,15 @@ const personDetailsSchema = Joi.object({
 
 const checkoutItemSchema = Joi.object({
   id: Joi.string().required(), // Unique ID for the checkout item (from CartItem)
-  meal: Joi.object({
-    id: Joi.string().required(),
-    name: Joi.string().required(),
-    // Add other meal properties if needed for validation
-  }).required(),
-  plan: Joi.object({
-    id: Joi.string().required(),
-    name: Joi.string().required(),
-    // Add other plan properties if needed for validation
-  }).required(),
+  menu: Joi.string().required(), // Changed from meal object to menu ID
+  plan: Joi.string().required(), // Changed from plan object to plan ID
   quantity: Joi.number().integer().min(1).required(),
   personDetails: Joi.array().items(personDetailsSchema).optional(), // Optional array of person details
   startDate: Joi.string().isoDate().required(),
   endDate: Joi.string().isoDate().required(),
+  skippedDates: Joi.array().items(Joi.string().isoDate()).optional(), // Added skippedDates
   itemTotalPrice: Joi.number().min(0).required(),
-  vendor: Joi.object({
-    id: Joi.string().required(),
-    name: Joi.string().required(),
-    // Add other vendor properties if needed for validation
-  }).required(),
+  vendor: Joi.string().required(), // Changed from vendor object to vendor ID
 });
 
 const deliveryAddressCategorySchema = Joi.object({
@@ -107,6 +96,7 @@ const orderUpdateSchema = Joi.object({
         id: Joi.string().required(), // ID of the specific order item to update
         startDate: Joi.string().isoDate().optional(),
         endDate: Joi.string().isoDate().optional(),
+        skippedDates: Joi.array().items(Joi.string().isoDate()).optional(), // Added skippedDates to allow updating for specific items
         personDetails: Joi.array().items(personDetailsSchema).optional(),
       })
     )
@@ -141,7 +131,7 @@ router.post("/webhook", async (req, res) => {
 
       const order = await Order.findById(orderId)
         .populate("userId")
-        .populate("items.meal")
+        .populate("items.menu") // Changed from items.meal to items.menu
         .populate("items.plan")
         .populate("items.vendor");
 
@@ -297,7 +287,7 @@ router.post("/test-email-pdf", async (req, res) => {
 
     const order = await Order.findById(orderId)
       .populate("userId")
-      .populate("items.meal")
+      .populate("items.menu") // Changed from items.meal to items.menu
       .populate("items.plan")
       .populate("items.vendor");
 
@@ -423,14 +413,15 @@ router.post("/", authMiddleware.protect, async (req, res) => {
     // Map checkoutData items to OrderItemSchema
     const orderItems = checkoutData.items.map((item) => ({
       id: item.id,
-      meal: item.meal.id,
-      plan: item.plan.id,
+      menu: item.menu, // Changed from item.meal.id to item.menu
+      plan: item.plan,
       quantity: item.quantity,
       personDetails: item.personDetails,
       startDate: new Date(item.startDate),
       endDate: new Date(item.endDate),
+      skippedDates: item.skippedDates ? item.skippedDates.map(date => new Date(date)) : [], // Added skippedDates
       itemTotalPrice: item.itemTotalPrice,
-      vendor: item.vendor.id,
+      vendor: item.vendor, // Changed from item.vendor.id to item.vendor
     }));
 
     order = new Order({
@@ -587,6 +578,10 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
           }
           if (updatedItem.personDetails) {
             existingItem.personDetails = updatedItem.personDetails;
+          }
+          if (updatedItem.skippedDates) {
+            // Assuming skippedDates is an array of dates to be added or replaced
+            existingItem.skippedDates = updatedItem.skippedDates.map(date => new Date(date));
           }
         }
       });

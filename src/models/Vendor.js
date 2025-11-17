@@ -7,7 +7,8 @@ const VendorSchema = new mongoose.Schema({
   image: { type: String },
   rating: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  menus: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Menu' }]
 });
 
 module.exports = mongoose.model('Vendor', VendorSchema);
