@@ -8,6 +8,8 @@ const Meal = require("../models/Meal");
 const Plan = require("../models/Plan");
 const Vendor = require("../models/Vendor");
 const User = require("../models/User"); // Import User model
+const Cart = require("../models/Cart"); // Import Cart model
+const CartItem = require("../models/CartItem"); // Import CartItem model
 const {
   createCashfreeOrder,
   getCashfreeOrderDetails,
@@ -106,7 +108,6 @@ const orderUpdateSchema = Joi.object({
   newEndDate: Joi.string().isoDate().optional(), // Top-level newEndDate for a specific item
 }).min(1); // At least one field must be present for update
 
-
 router.post("/webhook", async (req, res) => {
   const { type, data, event_time } = req.body;
 
@@ -134,9 +135,9 @@ router.post("/webhook", async (req, res) => {
         .populate("items.menu") // Changed from items.meal to items.menu
         .populate("items.plan")
         .populate("items.vendor");
-console.log(Order.schema.paths['items.menu']); // Should show ref: 'Menu'
-console.log(Order.schema.paths['items.plan']); // Should show ref: 'Plan'
-console.log(Order.schema.paths['items.vendor']); // Should show ref: 'Vendor'
+      console.log(Order.schema.paths["items.menu"]); // Should show ref: 'Menu'
+      console.log(Order.schema.paths["items.plan"]); // Should show ref: 'Plan'
+      console.log(Order.schema.paths["items.vendor"]); // Should show ref: 'Vendor'
       if (!order) {
         console.error(`Order not found for ID: ${orderId}`);
         return res.status(404).json({ message: "Order not found" });
@@ -150,14 +151,17 @@ console.log(Order.schema.paths['items.vendor']); // Should show ref: 'Vendor'
         bankReference: bankReference,
         method: paymentData.payment_group, // Assuming payment_group is the method
       };
-      console.log(`Order ${orderId} payment details updated:`, order.paymentDetails);
+      console.log(
+        `Order ${orderId} payment details updated:`,
+        order.paymentDetails
+      );
 
       if (paymentStatus === "SUCCESS") {
         order.status = "confirmed";
         order.paymentConfirmedAt = new Date();
 
         // Fetch user and vendor details for email and invoice
-        const user = await User.findById(order.userId);
+        const user = await User.findById(order.user);
         if (!user) {
           console.error(`User not found for order ${orderId}`);
           // Continue processing, but log the error
@@ -245,6 +249,21 @@ console.log(Order.schema.paths['items.vendor']); // Should show ref: 'Vendor'
             );
           }
         }
+
+        // Clear user's cart and attached cart items after successful order
+        try {
+          const userCart = await Cart.findOne({ user: order.user });
+          if (userCart) {
+            await CartItem.deleteMany({ cart: userCart._id });
+            await Cart.deleteOne({ _id: userCart._id });
+            console.log(`Cart and cart items cleared for user ${order.user}`);
+          }
+        } catch (cartClearError) {
+          console.error(
+            `Failed to clear cart for user ${order.user} after order ${order._id}:`,
+            cartClearError.message
+          );
+        }
       } else if (paymentStatus === "FAILED") {
         order.status = "failed";
       } else {
@@ -297,7 +316,7 @@ router.post("/test-email-pdf", async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    const user = await User.findById(order.userId);
+    const user = await User.findById(order.user);
     if (!user) {
       console.error(`User not found for order ${orderId}`);
       return res.status(404).json({ message: "User not found for the order" });
@@ -321,7 +340,9 @@ router.post("/test-email-pdf", async (req, res) => {
         `Failed to generate or upload invoice PDF for order ${order._id}:`,
         pdfError
       );
-      return res.status(500).json({ message: "Failed to generate invoice PDF" });
+      return res
+        .status(500)
+        .json({ message: "Failed to generate invoice PDF" });
     }
 
     // Send Order Confirmation Email to User
@@ -421,7 +442,9 @@ router.post("/", authMiddleware.protect, async (req, res) => {
       personDetails: item.personDetails,
       startDate: new Date(item.startDate),
       endDate: new Date(item.endDate),
-      skippedDates: item.skippedDates ? item.skippedDates.map(date => new Date(date)) : [], // Added skippedDates
+      skippedDates: item.skippedDates
+        ? item.skippedDates.map((date) => new Date(date))
+        : [], // Added skippedDates
       itemTotalPrice: item.itemTotalPrice,
       vendor: item.vendor, // Changed from item.vendor.id to item.vendor
     }));
@@ -511,7 +534,12 @@ router.get("/", authMiddleware.protect, async (req, res) => {
   try {
     const userId = req.user.id; // Get userId from authenticated user
 
-    const orders = await Order.find({ userId: userId }).sort({ orderDate: -1 });
+    const orders = await Order.find({ user: userId })
+      .populate("user")
+      .populate("items.menu")
+      .populate("items.plan")
+      .populate("items.vendor")
+      .sort({ orderDate: -1 });
 
     res.status(200).json(orders);
   } catch (error) {
@@ -538,7 +566,7 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
       });
     }
 
-    const order = await Order.findOne({ _id: orderId, userId: userId });
+    const order = await Order.findOne({ _id: orderId, user: userId });
 
     if (!order) {
       return res
@@ -583,7 +611,9 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
           }
           if (updatedItem.skippedDates) {
             // Assuming skippedDates is an array of dates to be added or replaced
-            existingItem.skippedDates = updatedItem.skippedDates.map(date => new Date(date));
+            existingItem.skippedDates = updatedItem.skippedDates.map(
+              (date) => new Date(date)
+            );
           }
         }
       });
@@ -632,14 +662,18 @@ router.get("/details/:orderId", authMiddleware.protect, async (req, res) => {
         .json({ message: "Order not found or invalid ID format" });
     }
 
-    const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId)
+      .populate("user")
+      .populate("items.menu")
+      .populate("items.plan")
+      .populate("items.vendor");
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
 
     // Optional: Add authorization check to ensure the requesting user is the owner of the order
-    // Ensure order.userId exists and is a valid ID before comparison
+    // Ensure order.user exists and is a valid ID before comparison
     console.log(req.user.id, order.user);
     const orderUserId = order.user ? order.user._id.toString() : null;
     if (!req.user || !orderUserId || req.user.id !== orderUserId) {
@@ -649,51 +683,14 @@ router.get("/details/:orderId", authMiddleware.protect, async (req, res) => {
     }
     console.log(order);
 
-if (!order) {
-  return res.status(404).json({ message: "Order not found" });
-}
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
 
-// Map items to include only needed fields
-const processedItems = order.items.map(item => ({
-  id: item.id,
-  menu: item.menu ? {
-    id: item.menu._id,
-    name: item.menu.name,
-    image: item.menu.image
-  } : null,
-  plan: item.plan ? {
-    id: item.plan._id,
-    name: item.plan.name
-  } : null,
-  vendor: item.vendor ? {
-    id: item.vendor._id,
-    name: item.vendor.name
-  } : null,
-  quantity: item.quantity,
-  personDetails: item.personDetails,
-  startDate: item.startDate,
-  endDate: item.endDate,
-  skippedDates: item.skippedDates,
-  itemTotalPrice: item.itemTotalPrice
-  // add other fields from item if needed
-}));
-
-const finalorder = {
-  _id: order._id,
-  user: order.user ? { id: order.user._id, name: order.user.name, email: order.user.email } : null,
-  items: processedItems,
-  paymentMethod: order.paymentMethod,
-  totalAmount: order.totalAmount,
-  currency: order.currency,
-  orderDate: order.orderDate,
-  status: order.status,
-  deliveryAddresses: order.deliveryAddresses,
-  createdAt: order.createdAt,
-  updatedAt: order.updatedAt
-  // add other order-level fields as needed
-};
-console.log("finalorder:",finalorder);
-res.status(200).json({ order: finalorder });
+    // Map items to include only needed fields
+    // Send the populated order object directly
+    console.log("finalorder:", order);
+    res.status(200).json({ order: order });
   } catch (error) {
     console.error("Error fetching order details:", error);
     res.status(500).json({ message: "Server error" });
@@ -788,7 +785,11 @@ router.get(
         const processedOrder = {
           _id: order._id,
           user: order.user
-            ? { id: order.user._id, name: order.user.name, email: order.user.email }
+            ? {
+                id: order.user._id,
+                name: order.user.name,
+                email: order.user.email,
+              }
             : null,
           items: order.items.map((item) => ({
             id: item.id,
@@ -859,7 +860,9 @@ router.get("/sync-orders", async (req, res) => {
       status: "error",
       message: "Internal Server Error",
       timestamp: new Date().toISOString(),
-      failedUpdates: [{ error: error.message, timestamp: new Date().toISOString() }],
+      failedUpdates: [
+        { error: error.message, timestamp: new Date().toISOString() },
+      ],
     });
   }
 });
