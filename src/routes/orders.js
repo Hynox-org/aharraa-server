@@ -130,11 +130,13 @@ router.post("/webhook", async (req, res) => {
       }
 
       const order = await Order.findById(orderId)
-        .populate("userId")
+        .populate("user")
         .populate("items.menu") // Changed from items.meal to items.menu
         .populate("items.plan")
         .populate("items.vendor");
-
+console.log(Order.schema.paths['items.menu']); // Should show ref: 'Menu'
+console.log(Order.schema.paths['items.plan']); // Should show ref: 'Plan'
+console.log(Order.schema.paths['items.vendor']); // Should show ref: 'Vendor'
       if (!order) {
         console.error(`Order not found for ID: ${orderId}`);
         return res.status(404).json({ message: "Order not found" });
@@ -286,7 +288,7 @@ router.post("/test-email-pdf", async (req, res) => {
     }
 
     const order = await Order.findById(orderId)
-      .populate("userId")
+      .populate("user")
       .populate("items.menu") // Changed from items.meal to items.menu
       .populate("items.plan")
       .populate("items.vendor");
@@ -425,7 +427,7 @@ router.post("/", authMiddleware.protect, async (req, res) => {
     }));
 
     order = new Order({
-      userId: checkoutData.userId,
+      user: checkoutData.userId,
       items: orderItems,
       paymentMethod,
       totalAmount: checkoutData.totalPrice,
@@ -638,15 +640,60 @@ router.get("/details/:orderId", authMiddleware.protect, async (req, res) => {
 
     // Optional: Add authorization check to ensure the requesting user is the owner of the order
     // Ensure order.userId exists and is a valid ID before comparison
-    const orderUserId = order.userId ? order.userId.toString() : null;
-
+    console.log(req.user.id, order.user);
+    const orderUserId = order.user ? order.user._id.toString() : null;
     if (!req.user || !orderUserId || req.user.id !== orderUserId) {
       return res.status(403).json({
         message: "Access denied. You can only view your own order details.",
       });
     }
+    console.log(order);
 
-    res.status(200).json(order);
+if (!order) {
+  return res.status(404).json({ message: "Order not found" });
+}
+
+// Map items to include only needed fields
+const processedItems = order.items.map(item => ({
+  id: item.id,
+  menu: item.menu ? {
+    id: item.menu._id,
+    name: item.menu.name,
+    image: item.menu.image
+  } : null,
+  plan: item.plan ? {
+    id: item.plan._id,
+    name: item.plan.name
+  } : null,
+  vendor: item.vendor ? {
+    id: item.vendor._id,
+    name: item.vendor.name
+  } : null,
+  quantity: item.quantity,
+  personDetails: item.personDetails,
+  startDate: item.startDate,
+  endDate: item.endDate,
+  skippedDates: item.skippedDates,
+  itemTotalPrice: item.itemTotalPrice
+  // add other fields from item if needed
+}));
+
+const finalorder = {
+  _id: order._id,
+  user: order.user ? { id: order.user._id, name: order.user.name, email: order.user.email } : null,
+  items: processedItems,
+  paymentMethod: order.paymentMethod,
+  totalAmount: order.totalAmount,
+  currency: order.currency,
+  orderDate: order.orderDate,
+  status: order.status,
+  deliveryAddresses: order.deliveryAddresses,
+  createdAt: order.createdAt,
+  updatedAt: order.updatedAt
+  // add other order-level fields as needed
+};
+console.log("finalorder:",finalorder);
+res.status(200).json({ order: finalorder });
   } catch (error) {
     console.error("Error fetching order details:", error);
     res.status(500).json({ message: "Server error" });
@@ -675,8 +722,9 @@ router.get(
           .json({ error: "Not Found", details: "Order not found." });
       }
 
-      // Optional: Add authorization check to ensure the requesting user is the owner of the order
-      const orderUserId = order.userId ? order.userId.toString() : null;
+      // Optional: Add authorization check
+      const orderUserId = order.user ? order.user.toString() : null;
+      console.log({ orderUserId, reqUserId: req.user.id });
       if (!req.user || !orderUserId || req.user.id !== orderUserId) {
         return res.status(403).json({
           message: "Access denied. You can only verify your own order details.",
@@ -698,35 +746,32 @@ router.get(
       }
 
       try {
-        const cashfreeDetails = await getCashfreeOrderDetails(order._id); // Assuming Cashfree orderId is stored in paymentSessionId
+        const cashfreeDetails = await getCashfreeOrderDetails(order._id);
 
-        // Compare cashfreeDetails.order_status with order.status and update if necessary
         if (
           cashfreeDetails.order_status === "PAID" &&
           order.status !== "confirmed"
         ) {
-          try{
-          const token = req.headers.authorization.split(" ")[1];
-          const res = await fetch(`${process.env.BACKEND_BASE_URL}/api/cart/${order.userId}/clear`,
-             { 
-              method: 'DELETE' ,
-               headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}`
+          try {
+            const token = req.headers.authorization.split(" ")[1];
+            const resCartClear = await fetch(
+              `${process.env.BACKEND_BASE_URL}/api/cart/${order.user}/clear`,
+              {
+                method: "DELETE",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${token}`,
+                },
               }
+            );
+            if (!resCartClear.ok) {
+              console.error("Failed to clear cart:", resCartClear);
+            } else {
+              console.log(`Cart cleared for user ${order.user}`);
             }
-          
-          );
-          if(!res.ok){
-            console.error("Failed to clear cart:", res);
+          } catch (err) {
+            console.log(err);
           }
-          else{
-            console.log(`Cart cleared for user ${order.userId}`);
-          }
-        }
-        catch(err){
-          console.log(err);
-        }
           order.status = "confirmed";
           await order.save();
         } else if (
@@ -736,9 +781,56 @@ router.get(
           order.status = "failed";
           await order.save();
         }
-        // Add other status mappings as needed (e.g., 'PENDING' to 'pending')
 
-        return res.status(200).json({ order, cashfreeDetails });
+        console.log("Cashfree payment details verified:", cashfreeDetails);
+
+        // Rename variable to avoid shadowing
+        const processedOrder = {
+          _id: order._id,
+          user: order.user
+            ? { id: order.user._id, name: order.user.name, email: order.user.email }
+            : null,
+          items: order.items.map((item) => ({
+            id: item.id,
+            menu: item.menu
+              ? {
+                  id: item.menu._id,
+                  name: item.menu.name,
+                  image: item.menu.image,
+                }
+              : null,
+            plan: item.plan
+              ? {
+                  id: item.plan._id,
+                  name: item.plan.name,
+                }
+              : null,
+            vendor: item.vendor
+              ? {
+                  id: item.vendor._id,
+                  name: item.vendor.name,
+                }
+              : null,
+            quantity: item.quantity,
+            personDetails: item.personDetails,
+            startDate: item.startDate,
+            endDate: item.endDate,
+            skippedDates: item.skippedDates,
+            itemTotalPrice: item.itemTotalPrice,
+          })),
+          paymentMethod: order.paymentMethod,
+          totalAmount: order.totalAmount,
+          currency: order.currency,
+          orderDate: order.orderDate,
+          status: order.status,
+          deliveryAddresses: order.deliveryAddresses,
+          createdAt: order.createdAt,
+          updatedAt: order.updatedAt,
+          // add other order-level fields as needed
+        };
+
+        // Return processedOrder instead of original order
+        return res.status(200).json({ order: processedOrder, cashfreeDetails });
       } catch (cashfreeError) {
         console.error("Error verifying Cashfree payment:", cashfreeError);
         return res.status(500).json({

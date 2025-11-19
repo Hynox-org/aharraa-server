@@ -198,6 +198,7 @@ router.get("/:userId", protect, async (req, res) => {
  *         description: Internal server error
  */
 router.post("/:userId/add", protect, async (req, res) => {
+  console.log("Add to cart request body:", req.params.userId, req.body);
   try {
     const { userId } = req.params;
     const { menuId, planId, quantity, startDate, personDetails } = req.body;
@@ -232,8 +233,12 @@ router.post("/:userId/add", protect, async (req, res) => {
 
     //  Fetch or create user's cart
     let cart = await Cart.findOne({ user: userId });
-    if (!cart) {
+      console.log(cart);
+    if (!cart || cart === null) {
+      console.log("No cart found, creating new cart for user:", userId);
       cart = new Cart({ user: userId, items: [] });
+      console.log("New cart created:", cart);
+      await cart.save();
     }
 
     //  Check for existing cart item
@@ -257,7 +262,7 @@ router.post("/:userId/add", protect, async (req, res) => {
         .add(plan.durationDays - 1, "days")
         .toDate();
       const itemTotalPrice = quantity * menu.perDayPrice * plan.durationDays;
-
+console.log("useraID storig:", userId);
       const newCartItem = new CartItem({
         user: userId,
         menu: menuId,
@@ -276,7 +281,8 @@ router.post("/:userId/add", protect, async (req, res) => {
 
     // ✅ Remove invalid/deleted items if necessary
     cart.items = cart.items.filter(Boolean);
-
+console.log("Cart items after filtering:", cart.items);
+console.log("Calculating totals for cart:", cart);
     // ✅ Recalculate totals and populate details
     const updatedCart = await calculateCartTotals(cart);
     await updatedCart.populate({
@@ -681,7 +687,8 @@ router.get("/:userId/quantity", protect, async (req, res) => {
     const cart = await Cart.findOne({ user: req.params.userId });
 
     if (!cart) {
-      return res.status(404).json({ message: "Cart not found for user" });
+      // return res.status(404).json({ message: "Cart not found for user" });
+      return res.status(200).json({ totalItems: 0 });
     }
 
     res.status(200).json({ totalItems: cart.totalItems });
