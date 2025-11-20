@@ -4,7 +4,7 @@ const getUserOrderConfirmationEmail = (order, user, invoicePdfUrl = null) => {
     itemsHtml += `
       <div style="border:2px solid #034C3C; margin:0 0 2px 0; padding:14px; background:#fff;">
         <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:8px;">ITEM_${order.items.indexOf(item) + 1}</div>
-        <div style="font-size:16px; font-weight:700; color:#000; text-transform:uppercase; margin-bottom:4px;">${item.meal.name}</div>
+        <div style="font-size:16px; font-weight:700; color:#000; text-transform:uppercase; margin-bottom:4px;">${item.menu.name}</div>
         <div style="font-size:13px; color:#000; margin-bottom:10px;">${item.plan.name} / ${item.vendor.name}</div>
         <div style="display:flex; gap:30px; flex-wrap:wrap; border-top:1px solid #000; padding-top:10px; margin-top:10px;">
           <div><span style="font-size:11px; color:#666;">QTY:</span> <span style="font-size:14px; font-weight:700;">${item.quantity}</span></div>
@@ -37,7 +37,7 @@ const getUserOrderConfirmationEmail = (order, user, invoicePdfUrl = null) => {
 
     ORDER ITEMS:
     ${order.items.map((item, index) => `
-      ITEM_${index + 1}: ${item.meal.name}
+      ITEM_${index + 1}: ${item.menu.name}
       Plan: ${item.plan.name} / Vendor: ${item.vendor.name}
       Quantity: ${item.quantity}
       Price: ₹${item.itemTotalPrice}
@@ -151,7 +151,7 @@ const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
     itemsHtml += `
       <div style="border:2px solid #034C3C; margin:0 0 2px 0; padding:14px; background:#fff;">
         <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:8px;">ITEM_${vendorItems.indexOf(item) + 1}</div>
-        <div style="font-size:16px; font-weight:700; color:#000; text-transform:uppercase; margin-bottom:4px;">${item.meal.name}</div>
+        <div style="font-size:16px; font-weight:700; color:#000; text-transform:uppercase; margin-bottom:4px;">${item.menu.name}</div>
         <div style="font-size:13px; color:#000; margin-bottom:10px;">${item.plan.name}</div>
         <div style="display:flex; gap:30px; flex-wrap:wrap; border-top:1px solid #000; padding-top:10px; margin-top:10px;">
           <div><span style="font-size:11px; color:#666;">QTY:</span> <span style="font-size:14px; font-weight:700;">${item.quantity}</span></div>
@@ -178,7 +178,7 @@ const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
 
     YOUR ITEMS:
     ${vendorItems.map((item, index) => `
-      ITEM_${index + 1}: ${item.meal.name}
+      ITEM_${index + 1}: ${item.menu.name}
       Plan: ${item.plan.name}
       Quantity: ${item.quantity}
       Price: ₹${item.itemTotalPrice}
@@ -187,8 +187,8 @@ const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
     `).join('\n')}
 
     CUSTOMER:
-    ${order.userId.name || 'N/A'}
-    ${order.userId.email || 'N/A'}
+    ${order.user.name || 'N/A'}
+    ${order.user.email || 'N/A'}
 
     ORDER INFO:
     PAYMENT: ${order.paymentMethod}
@@ -244,8 +244,8 @@ const getVendorOrderNotificationEmail = (order, vendor, vendorItems) => {
 
             <div style="border:2px solid #000; padding:16px; margin:20px 0; background:#f5f5f5;">
               <div style="font-family:monospace; font-size:11px; color:#666; margin-bottom:12px;">CUSTOMER</div>
-              <div style="font-size:14px; font-weight:700;">${order.userId.name || 'N/A'}</div>
-              <div style="font-size:13px; margin-top:4px;">${order.userId.email || 'N/A'}</div>
+              <div style="font-size:14px; font-weight:700;">${order.user.name || 'N/A'}</div>
+              <div style="font-size:13px; margin-top:4px;">${order.user.email || 'N/A'}</div>
             </div>
 
             <div style="border:2px solid #000; padding:16px; margin:20px 0;">

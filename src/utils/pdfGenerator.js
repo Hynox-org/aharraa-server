@@ -79,14 +79,14 @@ const generateInvoicePdf = async (order, user) => {
   }, 0);
 
   // Get unique meal categories
-  const uniqueMealCategories = [
-    new Set(order.items.map((item) => item.meal.category || "General")),
-  ];
+  const uniqueMealCategories = new Set(
+    order.items.map((item) => item.menu?.category || "General")
+  );
 
   // Calculate costs
   const deliveryCostPerCategory = 33.33;
   const deliveryCost = calculateDeliveryCost(
-    uniqueMealCategories,
+    Array.from(uniqueMealCategories), // Convert Set to Array for the utility function
     totalPlanDays,
     deliveryCostPerCategory
   );
@@ -110,7 +110,7 @@ const generateInvoicePdf = async (order, user) => {
       <tr>
         <td class="item-number">${index + 1}</td>
         <td class="item-details">
-          <div class="meal-name">${item.meal.name}</div>
+          <div class="meal-name">${item.menu.name}</div>
           <div class="item-meta">
             <span class="meta-badge plan-badge">${item.plan.name}</span>
             <span class="meta-badge date-badge">${startDate} - ${endDate}</span>

@@ -41,7 +41,39 @@ const sendEmail = async (
   const brevoFromEmail = process.env.BREVO_FROM_EMAIL || "noreply@aharraa.com"; // Default or configurable Brevo sender
   const gmailFromEmail = process.env.GMAIL_USER || "info.aharraa@gmail.com";
 
-  // Try Brevo first
+  // Try Nodemailer (Gmail) first
+  if (nodemailerTransporter && gmailFromEmail) {
+    try {
+      const mailOptions = {
+        from: gmailFromEmail,
+        to,
+        subject,
+        text: textContent,
+        html: htmlContent,
+        attachments: attachments.map(attachment => ({
+          content: attachment.content, // Nodemailer expects Buffer or string, not base64 string
+          filename: attachment.filename,
+          contentType: attachment.contentType,
+          cid: attachment.cid,
+        })),
+      };
+      await nodemailerTransporter.sendMail(mailOptions);
+      console.log(`Email sent via Nodemailer (Gmail) to ${to} with subject: ${subject}`);
+      return; // Email sent successfully via Nodemailer
+    } catch (nodemailerError) {
+      console.error(
+        `Error sending email via Nodemailer (Gmail) to ${to} with subject "${subject}":`,
+        nodemailerError
+      );
+      console.warn("Attempting to send email via Brevo fallback...");
+    }
+  } else {
+    console.warn(
+      "Nodemailer (Gmail) is not fully configured (missing GMAIL_USER or GMAIL_PASS). Attempting Brevo fallback..."
+    );
+  }
+
+  // Fallback to Brevo
   if (process.env.BREVO_API_KEY) {
     try {
       const sendSmtpEmail = new SendSmtpEmail();
@@ -70,39 +102,7 @@ const sendEmail = async (
       if (brevoError.response && brevoError.response.body) {
         console.error("Brevo API Error Details:", brevoError.response.body);
       }
-      console.warn("Attempting to send email via Nodemailer (Gmail) fallback...");
-    }
-  } else {
-    console.warn(
-      "Brevo is not fully configured (missing BREVO_API_KEY). Attempting Nodemailer (Gmail) fallback..."
-    );
-  }
-
-  // Fallback to Nodemailer (Gmail)
-  if (nodemailerTransporter && gmailFromEmail) {
-    try {
-      const mailOptions = {
-        from: gmailFromEmail,
-        to,
-        subject,
-        text: textContent,
-        html: htmlContent,
-        attachments: attachments.map(attachment => ({
-          content: attachment.content, // Nodemailer expects Buffer or string, not base64 string
-          filename: attachment.filename,
-          contentType: attachment.contentType,
-          cid: attachment.cid,
-        })),
-      };
-      await nodemailerTransporter.sendMail(mailOptions);
-      console.log(`Email sent via Nodemailer (Gmail) to ${to} with subject: ${subject}`);
-      return; // Email sent successfully via Nodemailer
-    } catch (nodemailerError) {
-      console.error(
-        `Error sending email via Nodemailer (Gmail) to ${to} with subject "${subject}":`,
-        nodemailerError
-      );
-      throw new Error(`Failed to send email to ${to} via Nodemailer: ${nodemailerError.message}`);
+      throw new Error(`Failed to send email to ${to} via Brevo: ${brevoError.message}`);
     }
   } else {
     throw new Error(`Failed to send email to ${to}: No configured email service could send the email.`);
