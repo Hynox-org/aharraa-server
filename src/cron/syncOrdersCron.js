@@ -42,8 +42,8 @@ async function syncOrdersToGoogleSheet() {
         { updatedAt: { $gte: syncStartTime } }  // Orders updated since 00:00 AM
       ]
     })
-      .populate("userId")
-      .populate("items.meal")
+      .populate("user")
+      .populate("items.menu")
       .populate("items.plan")
       .populate("items.vendor");
 
@@ -124,7 +124,7 @@ async function syncOrdersToGoogleSheet() {
     const allOrderData = orders.map(order => [
       order._id.toString(),
       '', // Placeholder for 'Last Synced' column in data rows, will be updated separately
-      order.userId ? order.userId.email : 'N/A',
+      order.user ? order.user.email : 'N/A',
       order.totalAmount,
       order.currency,
       order.orderDate.toISOString(),
