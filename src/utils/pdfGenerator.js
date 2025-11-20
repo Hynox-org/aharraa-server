@@ -437,7 +437,7 @@ const generateInvoicePdf = async (order, user) => {
     <div class="invoice-header">
       <div class="header-content">
         <div class="logo-section">
-          <img src="${process.env.PDF_LOGO_URL}" alt="Aharra Logo" class="logo">
+          <img src="https://qlgusdrybvqzckgizmco.supabase.co/storage/v1/object/public/Files/aharra_logo_color.jpg" alt="Aharra Logo" class="logo">
         </div>
         <div class="invoice-title-section">
           <div class="invoice-label">INVOICE</div>
@@ -574,13 +574,14 @@ const generateInvoicePdf = async (order, user) => {
       <p class="footer-title">Thank you for your order!</p>
       <p>For any queries, please contact us at support@aharra.com</p>
       <p class="footer-note">This is a computer-generated invoice and does not require a signature.</p>
+      <p>Powered by HYNOX</p>
     </div>
   </div>
 </body>
 </html>
   `;
 
-  await page.setContent(htmlContent, { waitUntil: "domcontentloaded" });
+  await page.setContent(htmlContent, { waitUntil: "networkidle0" });
 
   const pdfBuffer = await page.pdf({
     format: "A4",
