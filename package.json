@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Basic Node.js server with MongoDB and Supabase authentication (email/password + Google OAuth)",
   "main": "src/index.js",
-"scripts": {
+  "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "jest --runInBand",
@@ -38,7 +38,8 @@
     "pdfkit": "^0.17.2",
     "puppeteer": "^24.29.1",
     "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^4.6.3"
+    "swagger-ui-express": "^4.6.3",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "eslint": "^9.39.1",

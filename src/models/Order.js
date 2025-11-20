@@ -9,6 +9,24 @@ const AddressSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const RefundSchema = new mongoose.Schema(
+  {
+    cfRefundId: { type: String, required: true },
+    refundId: { type: String, required: true, unique: true }, // Our internal unique refund ID
+    amount: { type: Number, required: true },
+    currency: { type: String, default: "INR" },
+    status: {
+      type: String,
+      enum: ["SUCCESS", "PENDING", "CANCELLED", "ONHOLD", "FAILED"],
+      default: "PENDING",
+    },
+    note: { type: String },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false } // Do not create _id for subdocuments
+);
+
 const PersonDetailsSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
@@ -62,6 +80,7 @@ const OrderSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now },
   deliveryAddresses: { type: Map, of: AddressSchema, required: true },
   invoiceUrl: { type: String }, // Add invoiceUrl field
+  refunds: [{ type: RefundSchema }], // Add a field to store refund details
 });
 
 module.exports = mongoose.model("Order", OrderSchema);
