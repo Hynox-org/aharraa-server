@@ -23,6 +23,9 @@ const cartItemAddSchema = Joi.object({
       })
     )
     .optional(),
+  selectedMealTimes: Joi.array()
+    .items(Joi.string().valid("Breakfast", "Lunch", "Dinner"))
+    .optional(),
 });
 
 const cartItemUpdateQuantitySchema = Joi.object({
@@ -129,8 +132,27 @@ router.get("/:userId", protect, async (req, res) => {
         return item;
       });
     }
-    console.log("Cart fetched:", cart);
-    res.status(200).json(cart);
+    // Recalculate totals to ensure consistency
+    const updatedCart = await calculateCartTotals(cart);
+    await updatedCart.populate({
+      path: "items",
+      populate: [
+        {
+          path: "menu",
+          populate: {
+            path: "vendor",
+            model: "Vendor",
+          },
+        },
+        {
+          path: "plan",
+          model: "Plan",
+        },
+      ],
+    });
+
+    console.log("Cart fetched and totals recalculated:", updatedCart);
+    res.status(200).json(updatedCart);
   } catch (error) {
     console.error("Error fetching cart:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -183,6 +205,12 @@ router.get("/:userId", protect, async (req, res) => {
  *                       type: string
  *                     phoneNumber:
  *                       type: string
+ *               selectedMealTimes:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   enum: [Breakfast, Lunch, Dinner]
+ *                 description: Array of selected meal times (e.g., Breakfast, Lunch, Dinner).
  *     responses:
  *       200:
  *         description: Updated cart object.
@@ -201,15 +229,14 @@ router.post("/:userId/add", protect, async (req, res) => {
   console.log("Add to cart request body:", req.params.userId, req.body);
   try {
     const { userId } = req.params;
-    const { menuId, planId, quantity, startDate, personDetails } = req.body;
-
-    console.log("Incoming body:", req.body);
-    console.log(
-      "Authenticated user:",
-      req.user._id.toString(),
-      "Param user:",
-      userId
-    );
+    const {
+      menuId,
+      planId,
+      quantity,
+      startDate,
+      personDetails,
+      selectedMealTimes,
+    } = req.body;
 
     //  Authorization Check
     if (req.user._id.toString() !== userId) {
@@ -252,23 +279,52 @@ router.post("/:userId/add", protect, async (req, res) => {
     if (existingCartItem) {
       //  Update existing cart item
       existingCartItem.quantity += quantity;
+      // Calculate new itemTotalPrice based on selectedMealTimes
+      let mealTimePricesSum = 0;
+      if (selectedMealTimes && selectedMealTimes.length > 0) {
+        selectedMealTimes.forEach(mealTime => {
+          if (menu.price && menu.price[mealTime.toLowerCase()]) {
+            mealTimePricesSum += menu.price[mealTime.toLowerCase()];
+          }
+        });
+      } else {
+        // Fallback to perDayPrice if no meal times selected or prices not defined
+        mealTimePricesSum = menu.perDayPrice;
+      }
+
+      existingCartItem.quantity += quantity;
       existingCartItem.itemTotalPrice =
-        existingCartItem.quantity * menu.perDayPrice * plan.durationDays;
+        existingCartItem.quantity * plan.durationDays * mealTimePricesSum;
       if (personDetails) existingCartItem.personDetails = personDetails;
+      if (selectedMealTimes) existingCartItem.selectedMealTimes = selectedMealTimes;
       await existingCartItem.save();
     } else {
       //  Create new cart item
       const endDate = moment(startDate)
         .add(plan.durationDays - 1, "days")
         .toDate();
-      const itemTotalPrice = quantity * menu.perDayPrice * plan.durationDays;
-console.log("useraID storig:", userId);
+      
+      // Calculate itemTotalPrice for new cart item
+      let mealTimePricesSum = 0;
+      if (selectedMealTimes && selectedMealTimes.length > 0) {
+        selectedMealTimes.forEach(mealTime => {
+          if (menu.price && menu.price[mealTime.toLowerCase()]) {
+            mealTimePricesSum += menu.price[mealTime.toLowerCase()];
+          }
+        });
+      } else {
+        // Fallback to perDayPrice if no meal times selected or prices not defined
+        mealTimePricesSum = menu.perDayPrice;
+      }
+      const itemTotalPrice = quantity * plan.durationDays * mealTimePricesSum;
+
       const newCartItem = new CartItem({
         user: userId,
         menu: menuId,
         plan: planId,
         quantity,
         personDetails: personDetails || [],
+        selectedMealTimes: selectedMealTimes || [],
         startDate: new Date(startDate),
         endDate,
         itemTotalPrice,
@@ -281,8 +337,6 @@ console.log("useraID storig:", userId);
 
     // ✅ Remove invalid/deleted items if necessary
     cart.items = cart.items.filter(Boolean);
-console.log("Cart items after filtering:", cart.items);
-console.log("Calculating totals for cart:", cart);
     // ✅ Recalculate totals and populate details
     const updatedCart = await calculateCartTotals(cart);
     await updatedCart.populate({
@@ -380,10 +434,23 @@ router.put(
       }
 
       cartItem.quantity = quantity;
+      // Recalculate itemTotalPrice based on selectedMealTimes
+      let mealTimePricesSum = 0;
+      if (
+        cartItem.selectedMealTimes &&
+        cartItem.selectedMealTimes.length > 0
+      ) {
+        cartItem.selectedMealTimes.forEach((mealTime) => {
+          if (cartItem.menu.price && cartItem.menu.price[mealTime.toLowerCase()]) {
+            mealTimePricesSum += cartItem.menu.price[mealTime.toLowerCase()];
+          }
+        });
+      } else {
+        // Fallback to perDayPrice if no meal times selected or prices not defined
+        mealTimePricesSum = cartItem.menu.perDayPrice;
+      }
       cartItem.itemTotalPrice =
-        cartItem.quantity *
-        cartItem.menu.perDayPrice *
-        cartItem.plan.durationDays;
+        cartItem.quantity * cartItem.plan.durationDays * mealTimePricesSum;
       await cartItem.save();
 
       const cart = await Cart.findOne({ user: req.params.userId });

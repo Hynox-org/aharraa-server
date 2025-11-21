@@ -10,7 +10,7 @@ const Vendor = require("../models/Vendor");
 const User = require("../models/User"); // Import User model
 const Cart = require("../models/Cart"); // Import Cart model
 const CartItem = require("../models/CartItem"); // Import CartItem model
-const { v4: uuidv4 } = require('uuid'); // Import UUID for generating unique refund IDs
+const { v4: uuidv4 } = require("uuid"); // Import UUID for generating unique refund IDs
 const {
   createCashfreeOrder,
   getCashfreeOrderDetails,
@@ -57,6 +57,9 @@ const checkoutItemSchema = Joi.object({
   skippedDates: Joi.array().items(Joi.string().isoDate()).optional(), // Added skippedDates
   itemTotalPrice: Joi.number().min(0).required(),
   vendor: Joi.string().required(), // Changed from vendor object to vendor ID
+  selectedMealTimes: Joi.array()
+      .items(Joi.string().valid("Breakfast", "Lunch", "Dinner"))
+      .optional(),
 });
 
 const deliveryAddressCategorySchema = Joi.object({
@@ -429,6 +432,7 @@ router.post("/", authMiddleware.protect, async (req, res) => {
         : [], // Added skippedDates
       itemTotalPrice: item.itemTotalPrice,
       vendor: item.vendor, // Changed from item.vendor.id to item.vendor
+      selectedMealTimes: item.selectedMealTimes,
     }));
 
     order = new Order({
@@ -750,7 +754,6 @@ router.get(
           await order.save();
         }
 
-
         // Rename variable to avoid shadowing
         const processedOrder = {
           _id: order._id,
@@ -938,7 +941,9 @@ router.post("/refund/initiate", authMiddleware.protect, async (req, res) => {
     }
   } catch (error) {
     console.error("Error in refund initiation endpoint:", error);
-    res.status(500).json({ message: "Internal Server Error", details: error.message });
+    res
+      .status(500)
+      .json({ message: "Internal Server Error", details: error.message });
   }
 });
 
@@ -949,7 +954,9 @@ const refundWebhookSchema = Joi.object({
   refund_id: Joi.string().required(),
   order_id: Joi.string().required(),
   refund_amount: Joi.number().required(),
-  refund_status: Joi.string().valid("SUCCESS", "PENDING", "CANCELLED", "ONHOLD", "FAILED").required(),
+  refund_status: Joi.string()
+    .valid("SUCCESS", "PENDING", "CANCELLED", "ONHOLD", "FAILED")
+    .required(),
   // Add other fields from Cashfree refund webhook as needed
 });
 
@@ -958,7 +965,10 @@ router.post("/refund/webhook", async (req, res) => {
   try {
     const { error } = refundWebhookSchema.validate(req.body);
     if (error) {
-      console.error("Refund Webhook validation failed:", error.details[0].message);
+      console.error(
+        "Refund Webhook validation failed:",
+        error.details[0].message
+      );
       return res.status(400).json({ message: "Invalid webhook payload" });
     }
 
@@ -993,7 +1003,9 @@ router.post("/refund/webhook", async (req, res) => {
     } else {
       // This might happen if the webhook arrives before our initiate endpoint has saved the refund,
       // or if a refund was initiated externally. Depending on business logic, you might create a new refund entry.
-      console.warn(`Refund ${cf_refund_id} not found in order ${order_id}. Creating new entry.`);
+      console.warn(
+        `Refund ${cf_refund_id} not found in order ${order_id}. Creating new entry.`
+      );
       order.refunds.push({
         cfRefundId: cf_refund_id,
         refundId: refund_id,
@@ -1014,7 +1026,10 @@ router.post("/refund/webhook", async (req, res) => {
     const anyRefundPending = order.refunds.some((r) => r.status === "PENDING");
     const anyRefundFailed = order.refunds.some((r) => r.status === "FAILED");
 
-    if (allRefundsSuccessful && order.totalAmount === order.refunds.reduce((acc, r) => acc + r.amount, 0)) {
+    if (
+      allRefundsSuccessful &&
+      order.totalAmount === order.refunds.reduce((acc, r) => acc + r.amount, 0)
+    ) {
       order.status = "refunded";
     } else if (anyRefundPending) {
       order.status = "refund_pending";
@@ -1037,51 +1052,61 @@ const getRefundDetailsSchema = Joi.object({
 });
 
 // GET /api/orders/refund/details/:orderId/:refundId - Get details of a specific refund
-router.get("/refund/details/:orderId/:refundId", authMiddleware.protect, async (req, res) => {
-  try {
-    const { orderId, refundId } = req.params;
+router.get(
+  "/refund/details/:orderId/:refundId",
+  authMiddleware.protect,
+  async (req, res) => {
+    try {
+      const { orderId, refundId } = req.params;
 
-    const { error } = getRefundDetailsSchema.validate({ orderId, refundId });
-    if (error) {
-      return res.status(400).json({
-        error: "Bad Request",
-        details: `Validation failed: ${error.details[0].message}`,
+      const { error } = getRefundDetailsSchema.validate({ orderId, refundId });
+      if (error) {
+        return res.status(400).json({
+          error: "Bad Request",
+          details: `Validation failed: ${error.details[0].message}`,
+        });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(orderId)) {
+        return res.status(400).json({ message: "Invalid order ID format" });
+      }
+
+      const order = await Order.findOne({ _id: orderId, user: req.user.id }); // Ensure user owns the order
+      if (!order) {
+        return res
+          .status(404)
+          .json({
+            message: "Order not found or not authorized to view refund details",
+          });
+      }
+
+      // Find the specific refund within the order's refunds array using our internal refundId
+      const internalRefund = order.refunds.find((r) => r.refundId === refundId);
+      if (!internalRefund) {
+        return res
+          .status(404)
+          .json({ message: "Refund not found for this order" });
+      }
+
+      // Use Cashfree's cfRefundId to fetch details from Cashfree
+      const cashfreeRefundDetails = await getCashfreeRefundDetails(
+        order.paymentDetails.cfPaymentId || orderId, // Use the order's Cashfree payment ID or orderId if payment ID is not suitable for refunds
+        internalRefund.cfRefundId
+      );
+
+      res.status(200).json({
+        message: "Refund details fetched successfully",
+        cashfreeRefundDetails: cashfreeRefundDetails,
+        internalRefund: internalRefund, // Also return our internal record
       });
+    } catch (error) {
+      console.error("Error fetching refund details endpoint:", error);
+      res
+        .status(500)
+        .json({ message: "Internal Server Error", details: error.message });
     }
-
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ message: "Invalid order ID format" });
-    }
-
-    const order = await Order.findOne({ _id: orderId, user: req.user.id }); // Ensure user owns the order
-    if (!order) {
-      return res
-        .status(404)
-        .json({ message: "Order not found or not authorized to view refund details" });
-    }
-
-    // Find the specific refund within the order's refunds array using our internal refundId
-    const internalRefund = order.refunds.find(r => r.refundId === refundId);
-    if (!internalRefund) {
-      return res.status(404).json({ message: "Refund not found for this order" });
-    }
-
-    // Use Cashfree's cfRefundId to fetch details from Cashfree
-    const cashfreeRefundDetails = await getCashfreeRefundDetails(
-      order.paymentDetails.cfPaymentId || orderId, // Use the order's Cashfree payment ID or orderId if payment ID is not suitable for refunds
-      internalRefund.cfRefundId
-    );
-
-    res.status(200).json({
-      message: "Refund details fetched successfully",
-      cashfreeRefundDetails: cashfreeRefundDetails,
-      internalRefund: internalRefund, // Also return our internal record
-    });
-  } catch (error) {
-    console.error("Error fetching refund details endpoint:", error);
-    res.status(500).json({ message: "Internal Server Error", details: error.message });
   }
-});
+);
 
 // Joi schema for get all refunds for an order
 const getAllRefundsSchema = Joi.object({
@@ -1089,41 +1114,49 @@ const getAllRefundsSchema = Joi.object({
 });
 
 // GET /api/orders/refunds/all/:orderId - Get all refunds for a specific order
-router.get("/refunds/all/:orderId", authMiddleware.protect, async (req, res) => {
-  try {
-    const { orderId } = req.params;
+router.get(
+  "/refunds/all/:orderId",
+  authMiddleware.protect,
+  async (req, res) => {
+    try {
+      const { orderId } = req.params;
 
-    const { error } = getAllRefundsSchema.validate({ orderId });
-    if (error) {
-      return res.status(400).json({
-        error: "Bad Request",
-        details: `Validation failed: ${error.details[0].message}`,
+      const { error } = getAllRefundsSchema.validate({ orderId });
+      if (error) {
+        return res.status(400).json({
+          error: "Bad Request",
+          details: `Validation failed: ${error.details[0].message}`,
+        });
+      }
+
+      if (!mongoose.Types.ObjectId.isValid(orderId)) {
+        return res.status(400).json({ message: "Invalid order ID format" });
+      }
+
+      const order = await Order.findOne({ _id: orderId, user: req.user.id }); // Ensure user owns the order
+      if (!order) {
+        return res
+          .status(404)
+          .json({
+            message: "Order not found or not authorized to view refunds",
+          });
+      }
+
+      const cashfreeRefunds = await getAllCashfreeRefundsForOrder(orderId);
+
+      res.status(200).json({
+        message: "All refunds for order fetched successfully",
+        cashfreeRefunds: cashfreeRefunds,
+        internalRefunds: order.refunds, // Also return our internal records
       });
+    } catch (error) {
+      console.error("Error fetching all refunds for order endpoint:", error);
+      res
+        .status(500)
+        .json({ message: "Internal Server Error", details: error.message });
     }
-
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ message: "Invalid order ID format" });
-    }
-
-    const order = await Order.findOne({ _id: orderId, user: req.user.id }); // Ensure user owns the order
-    if (!order) {
-      return res
-        .status(404)
-        .json({ message: "Order not found or not authorized to view refunds" });
-    }
-
-    const cashfreeRefunds = await getAllCashfreeRefundsForOrder(orderId);
-
-    res.status(200).json({
-      message: "All refunds for order fetched successfully",
-      cashfreeRefunds: cashfreeRefunds,
-      internalRefunds: order.refunds, // Also return our internal records
-    });
-  } catch (error) {
-    console.error("Error fetching all refunds for order endpoint:", error);
-    res.status(500).json({ message: "Internal Server Error", details: error.message });
   }
-});
+);
 
 // Joi schema for update refund
 const updateRefundSchema = Joi.object({
@@ -1132,82 +1165,101 @@ const updateRefundSchema = Joi.object({
 });
 
 // PUT /api/orders/refund/update/:orderId/:refundId - Update a specific refund
-router.put("/refund/update/:orderId/:refundId", authMiddleware.protect, async (req, res) => {
-  try {
-    const { orderId, refundId } = req.params;
-    const { refundStatus, remarks } = req.body;
-    const userId = req.user.id;
-
-    const { error } = updateRefundSchema.validate(req.body);
-    if (error) {
-      return res.status(400).json({
-        error: "Bad Request",
-        details: `Validation failed: ${error.details[0].message}`,
-      });
-    }
-
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return res.status(400).json({ message: "Invalid order ID format" });
-    }
-
-    const order = await Order.findOne({ _id: orderId, user: userId });
-    if (!order) {
-      return res
-        .status(404)
-        .json({ message: "Order not found or not authorized to update refund" });
-    }
-
-    const internalRefund = order.refunds.find(r => r.refundId === refundId);
-    if (!internalRefund) {
-      return res.status(404).json({ message: "Refund not found for this order" });
-    }
-
-    // Only allow updating if the current status permits (e.g., if it's pending)
-    if (internalRefund.status !== "PENDING" && internalRefund.status !== "ONHOLD") {
-      return res.status(400).json({ message: `Refund is in "${internalRefund.status}" status and cannot be updated.` });
-    }
-
+router.put(
+  "/refund/update/:orderId/:refundId",
+  authMiddleware.protect,
+  async (req, res) => {
     try {
-      const cashfreeUpdateResponse = await updateCashfreeRefund(
-        order.paymentDetails.cfPaymentId || orderId, // Use Cashfree payment ID or orderId
-        internalRefund.cfRefundId, // Use Cashfree's refund ID
-        refundStatus,
-        remarks || `Refund update for order ${orderId}, refund ${refundId}`
-      );
+      const { orderId, refundId } = req.params;
+      const { refundStatus, remarks } = req.body;
+      const userId = req.user.id;
 
-      // Update the internal refund record
-      internalRefund.status = cashfreeUpdateResponse.refund_status;
-      internalRefund.note = cashfreeUpdateResponse.refund_note; // Cashfree might update the note/remarks
-      internalRefund.updatedAt = new Date();
-
-      // Potentially update the overall order status if the refund is cancelled
-      if (cashfreeUpdateResponse.refund_status === "CANCELLED") {
-        // You might need to re-evaluate the order's overall refund status
-        const anyOtherRefundsPending = order.refunds.some(r => r.status === "PENDING" && r.refundId !== refundId);
-        if (!anyOtherRefundsPending && order.status === "refund_pending") {
-          order.status = "confirmed"; // Or a more appropriate status if no other refunds are pending
-        }
+      const { error } = updateRefundSchema.validate(req.body);
+      if (error) {
+        return res.status(400).json({
+          error: "Bad Request",
+          details: `Validation failed: ${error.details[0].message}`,
+        });
       }
 
-      await order.save();
+      if (!mongoose.Types.ObjectId.isValid(orderId)) {
+        return res.status(400).json({ message: "Invalid order ID format" });
+      }
 
-      res.status(200).json({
-        message: "Refund updated successfully with Cashfree",
-        cashfreeResponse: cashfreeUpdateResponse,
-        internalRefund: internalRefund,
-      });
-    } catch (cashfreeError) {
-      console.error("Error updating Cashfree refund:", cashfreeError);
-      return res.status(500).json({
-        error: "Payment Gateway Error",
-        details: cashfreeError.message,
-      });
+      const order = await Order.findOne({ _id: orderId, user: userId });
+      if (!order) {
+        return res
+          .status(404)
+          .json({
+            message: "Order not found or not authorized to update refund",
+          });
+      }
+
+      const internalRefund = order.refunds.find((r) => r.refundId === refundId);
+      if (!internalRefund) {
+        return res
+          .status(404)
+          .json({ message: "Refund not found for this order" });
+      }
+
+      // Only allow updating if the current status permits (e.g., if it's pending)
+      if (
+        internalRefund.status !== "PENDING" &&
+        internalRefund.status !== "ONHOLD"
+      ) {
+        return res
+          .status(400)
+          .json({
+            message: `Refund is in "${internalRefund.status}" status and cannot be updated.`,
+          });
+      }
+
+      try {
+        const cashfreeUpdateResponse = await updateCashfreeRefund(
+          order.paymentDetails.cfPaymentId || orderId, // Use Cashfree payment ID or orderId
+          internalRefund.cfRefundId, // Use Cashfree's refund ID
+          refundStatus,
+          remarks || `Refund update for order ${orderId}, refund ${refundId}`
+        );
+
+        // Update the internal refund record
+        internalRefund.status = cashfreeUpdateResponse.refund_status;
+        internalRefund.note = cashfreeUpdateResponse.refund_note; // Cashfree might update the note/remarks
+        internalRefund.updatedAt = new Date();
+
+        // Potentially update the overall order status if the refund is cancelled
+        if (cashfreeUpdateResponse.refund_status === "CANCELLED") {
+          // You might need to re-evaluate the order's overall refund status
+          const anyOtherRefundsPending = order.refunds.some(
+            (r) => r.status === "PENDING" && r.refundId !== refundId
+          );
+          if (!anyOtherRefundsPending && order.status === "refund_pending") {
+            order.status = "confirmed"; // Or a more appropriate status if no other refunds are pending
+          }
+        }
+
+        await order.save();
+
+        res.status(200).json({
+          message: "Refund updated successfully with Cashfree",
+          cashfreeResponse: cashfreeUpdateResponse,
+          internalRefund: internalRefund,
+        });
+      } catch (cashfreeError) {
+        console.error("Error updating Cashfree refund:", cashfreeError);
+        return res.status(500).json({
+          error: "Payment Gateway Error",
+          details: cashfreeError.message,
+        });
+      }
+    } catch (error) {
+      console.error("Error in update refund endpoint:", error);
+      res
+        .status(500)
+        .json({ message: "Internal Server Error", details: error.message });
     }
-  } catch (error) {
-    console.error("Error in update refund endpoint:", error);
-    res.status(500).json({ message: "Internal Server Error", details: error.message });
   }
-});
+);
 
 // PUT /api/orders/:orderId/cancel - Endpoint for users to cancel their order
 router.put("/:orderId/cancel", authMiddleware.protect, async (req, res) => {
@@ -1221,18 +1273,29 @@ router.put("/:orderId/cancel", authMiddleware.protect, async (req, res) => {
 
     const order = await Order.findOne({ _id: orderId, user: userId });
     if (!order) {
-      return res.status(404).json({ message: "Order not found or not authorized to cancel" });
+      return res
+        .status(404)
+        .json({ message: "Order not found or not authorized to cancel" });
     }
 
     // Only allow cancellation if the order is in a cancellable status
     if (order.status !== "pending" && order.status !== "confirmed") {
-      return res.status(400).json({ message: `Order cannot be cancelled from current status: ${order.status}` });
+      return res
+        .status(400)
+        .json({
+          message: `Order cannot be cancelled from current status: ${order.status}`,
+        });
     }
 
     order.status = "cancelled"; // Set order status to cancelled
 
     // If the order was paid via Cashfree and confirmed, initiate a refund
-    if (order.paymentMethod !== "COD" && order.paymentDetails && order.paymentDetails.cfPaymentId && order.paymentDetails.status === "SUCCESS") {
+    if (
+      order.paymentMethod !== "COD" &&
+      order.paymentDetails &&
+      order.paymentDetails.cfPaymentId &&
+      order.paymentDetails.status === "SUCCESS"
+    ) {
       try {
         const refundAmount = order.totalAmount; // Refund the full amount
         const refundId = `refund_cancel_${orderId}_${uuidv4()}`;
@@ -1266,7 +1329,10 @@ router.put("/:orderId/cancel", authMiddleware.protect, async (req, res) => {
           order.status = "refund_pending";
         }
       } catch (cashfreeError) {
-        console.error("Error initiating Cashfree refund during order cancellation:", cashfreeError);
+        console.error(
+          "Error initiating Cashfree refund during order cancellation:",
+          cashfreeError
+        );
         // Even if refund fails, the order status should still be cancelled as requested by the user
         // Log the error and proceed without throwing, or add specific error handling for user feedback
         order.status = "cancelled_refund_failed"; // Example status for failed refund during cancellation
@@ -1279,7 +1345,9 @@ router.put("/:orderId/cancel", authMiddleware.protect, async (req, res) => {
     res.status(200).json({ message: "Order cancelled successfully", order });
   } catch (error) {
     console.error("Error cancelling order:", error);
-    res.status(500).json({ message: "Internal Server Error", details: error.message });
+    res
+      .status(500)
+      .json({ message: "Internal Server Error", details: error.message });
   }
 });
 
