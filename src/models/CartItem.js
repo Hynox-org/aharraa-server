@@ -13,6 +13,7 @@ const CartItemSchema = new mongoose.Schema({
   personDetails: [{ type: PersonDetailsSchema }],
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
+  selectedMealTimes: [{ type: String, enum: ['Breakfast', 'Lunch', 'Dinner'] }],
   itemTotalPrice: { type: Number, required: true },
   addedDate: { type: Date, default: Date.now },
 });

@@ -12,6 +12,12 @@ const MenuSchema = new mongoose.Schema({
   coverImage: { type: String, default: null },
   description: { type: String },
   perDayPrice: { type: Number, required: true },
+  availableMealTimes: [{ type: String, enum: ['Breakfast', 'Lunch', 'Dinner'] }],
+  price: {
+    breakfast: { type: Number },
+    lunch: { type: Number },
+    dinner: { type: Number }
+  },
   menuItems: [MenuItemSchema],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }

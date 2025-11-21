@@ -45,6 +45,7 @@ const OrderItemSchema = new mongoose.Schema(
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
     skippedDates: [{ type: Date }],
+    selectedMealTimes: [{ type: String, enum: ['Breakfast', 'Lunch', 'Dinner'] }],
     itemTotalPrice: { type: Number, required: true },
     vendor: {
       type: mongoose.Schema.Types.ObjectId,
