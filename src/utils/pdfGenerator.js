@@ -55,7 +55,7 @@ const generateInvoicePdf = async (order, user) => {
   );
 
   // Calculate costs
-  const deliveryCostPerMealPerDay = 33.33; // Renamed for consistency with frontend
+  const deliveryCostPerMealPerDay = 33; // Renamed for consistency with frontend
   const deliveryCost = calculateDeliveryCost(
     order.items, // Pass the entire items array
     deliveryCostPerMealPerDay

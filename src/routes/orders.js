@@ -456,7 +456,7 @@ router.post("/", authMiddleware.protect, async (req, res) => {
     };
 
     const MAX_CASHFREE_AMOUNT = 100000;
-    const roundedTotalAmount = parseFloat(totalAmount.toFixed(2));
+    const roundedTotalAmount = totalAmount.toFixed(2);
 
     if (roundedTotalAmount > MAX_CASHFREE_AMOUNT) {
       order.status = "failed";
