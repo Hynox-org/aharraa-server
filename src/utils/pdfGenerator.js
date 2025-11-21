@@ -2,31 +2,12 @@ const puppeteer = require("puppeteer-core");
 const chromium = require("@sparticuz/chromium");
 const { supabaseServiceRole } = require("../config/supabase");
 
-// Helper functions for calculations
-function calculateDeliveryCost(
-  uniqueMealCategories,
-  totalPlanDays,
-  deliveryCostPerCategory
-) {
-  return uniqueMealCategories.length * deliveryCostPerCategory * totalPlanDays;
-}
-
-function calculatePlatformCost(subtotal) {
-  return subtotal * 0.1;
-}
-
-function calculateGstCost(subtotal) {
-  return subtotal * 0.05;
-}
-
-function calculateGrandTotal({
-  subtotal,
-  deliveryCost,
-  platformCost,
-  gstCost,
-}) {
-  return subtotal + deliveryCost + platformCost + gstCost;
-}
+const {
+  calculateDeliveryCost,
+  calculatePlatformCost,
+  calculateGstCost,
+  calculateGrandTotal,
+} = require("./pricingCalculations");
 
 const generateInvoicePdf = async (order, user) => {
   let browser;
@@ -73,22 +54,11 @@ const generateInvoicePdf = async (order, user) => {
     0
   );
 
-  // Calculate total plan days
-  const totalPlanDays = order.items.reduce((sum, item) => {
-    return sum + (item.plan.durationDays || 1);
-  }, 0);
-
-  // Get unique meal categories
-  const uniqueMealCategories = new Set(
-    order.items.map((item) => item.menu?.category || "General")
-  );
-
   // Calculate costs
-  const deliveryCostPerCategory = 33.33;
+  const deliveryCostPerMealPerDay = 33.33; // Renamed for consistency with frontend
   const deliveryCost = calculateDeliveryCost(
-    Array.from(uniqueMealCategories), // Convert Set to Array for the utility function
-    totalPlanDays,
-    deliveryCostPerCategory
+    order.items, // Pass the entire items array
+    deliveryCostPerMealPerDay
   );
   const platformCost = calculatePlatformCost(subtotal);
   const gstCost = calculateGstCost(subtotal);
@@ -97,6 +67,7 @@ const generateInvoicePdf = async (order, user) => {
     deliveryCost,
     platformCost,
     gstCost,
+    environment: process.env.SERVER_ENVIRONMENT, // Pass environment to the centralized function
   });
 
   // Generate items HTML
