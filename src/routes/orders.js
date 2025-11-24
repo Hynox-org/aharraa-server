@@ -142,7 +142,8 @@ router.post("/webhook", async (req, res) => {
         .populate("user")
         .populate("items.menu") // Changed from items.meal to items.menu
         .populate("items.plan")
-        .populate("items.vendor");
+        .populate("items.vendor")
+        .populate("sentVendorNotifications"); // Populate the new field
       if (!order) {
         console.error(`Order not found for ID: ${orderId}`);
         return res.status(404).json({ message: "Order not found" });
@@ -158,114 +159,147 @@ router.post("/webhook", async (req, res) => {
       };
 
       if (paymentStatus === "SUCCESS") {
-        order.status = "confirmed";
-        order.paymentConfirmedAt = new Date();
+        // Only process if the order is not already confirmed
+        if (order.status !== "confirmed") {
+          order.status = "confirmed";
+          order.paymentConfirmedAt = new Date();
+          await order.save(); // Save immediately to persist status change
 
-        // Fetch user and vendor details for email and invoice
-        const user = await User.findById(order.user);
-        if (!user) {
-          console.error(`User not found for order ${orderId}`);
-          // Continue processing, but log the error
-        }
+          // Fetch user and vendor details for email and invoice
+          const user = await User.findById(order.user);
+          if (!user) {
+            console.error(`User not found for order ${orderId}`);
+            // Continue processing, but log the error
+          }
 
-        // Collect all unique vendor IDs from order items
-        const vendorIds = [
-          ...new Set(order.items.map((item) => item.vendor._id.toString())),
-        ];
-        const vendors = await Vendor.find({ _id: { $in: vendorIds } });
+          // Collect all unique vendor IDs from order items
+          const vendorIds = [
+            ...new Set(order.items.map((item) => item.vendor._id.toString())),
+          ];
+          const vendors = await Vendor.find({ _id: { $in: vendorIds } });
 
-        // Generate Invoice PDF and get public URL
-        let invoicePdfUrl = null;
-        try {
-          invoicePdfUrl = await generateInvoicePdf(order, user);
-          order.invoiceUrl = invoicePdfUrl; // Save the invoice URL to the order
-        } catch (pdfError) {
-          console.error(
-            `Failed to generate or upload invoice PDF for order ${order._id}:`,
-            pdfError
-          );
-        }
-
-        // Send Order Confirmation Email to User
-        if (user && user.email) {
-          const userEmailContent = getUserOrderConfirmationEmail(
-            order,
-            user,
-            invoicePdfUrl
-          );
+          // Generate Invoice PDF and get public URL
+          let invoicePdfUrl = null;
           try {
-            await sendEmail(
-              user.email,
-              `Order #${order._id} Confirmation - Aharraa`,
-              userEmailContent.text, // Pass text content
-              userEmailContent.html // Pass HTML content
-            );
-          } catch (emailError) {
+            invoicePdfUrl = await generateInvoicePdf(order, user);
+            order.invoiceUrl = invoicePdfUrl; // Save the invoice URL to the order
+            await order.save(); // Save again to persist invoice URL
+          } catch (pdfError) {
             console.error(
-              `Failed to send order confirmation email to user ${user.email} for order ${order._id}:`,
-              emailError.message
+              `Failed to generate or upload invoice PDF for order ${order._id}:`,
+              pdfError
             );
           }
-        } else {
-          console.warn(
-            `User email not available for order ${order._id}, skipping user email.`
-          );
-        }
 
-        // Send Order Notification Email to Vendors
-        for (const vendor of vendors) {
-          if (vendor.email) {
-            // Filter order items relevant to the current vendor
-            const vendorItems = order.items.filter(
-              (item) => item.vendor._id.toString() === vendor._id.toString()
-            );
-            const vendorEmailContent = getVendorOrderNotificationEmail(
+          // Send Order Confirmation Email to User
+          if (!order.isConfirmationEmailSent && user && user.email) {
+            const userEmailContent = getUserOrderConfirmationEmail(
               order,
-              vendor,
-              vendorItems
+              user,
+              invoicePdfUrl
             );
             try {
               await sendEmail(
-                vendor.email,
-                `New Order #${order._id} Notification - Aharraa`,
-                vendorEmailContent.text, // Pass text content
-                vendorEmailContent.html // Pass HTML content
+                user.email,
+                `Order #${order._id} Confirmation - Aharraa`,
+                userEmailContent.text, // Pass text content
+                userEmailContent.html // Pass HTML content
               );
+              order.isConfirmationEmailSent = true; // Mark as sent
+              await order.save(); // Save to persist email sent status
             } catch (emailError) {
               console.error(
-                `Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`,
+                `Failed to send order confirmation email to user ${user.email} for order ${order._id}:`,
                 emailError.message
               );
             }
+          } else if (order.isConfirmationEmailSent) {
+            console.log(
+              `Order confirmation email already sent for order ${order._id}. Skipping.`
+            );
           } else {
             console.warn(
-              `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
+              `User email not available for order ${order._id}, skipping user email.`
             );
           }
-        }
 
-        // Clear user's cart and attached cart items after successful order
-        try {
-          const userCart = await Cart.findOne({ user: order.user });
-          if (userCart) {
-            await CartItem.deleteMany({ cart: userCart._id });
-            await Cart.deleteOne({ _id: userCart._id });
+          // Send Order Notification Email to Vendors
+          for (const vendor of vendors) {
+            // Check if this vendor has already received a notification for this order
+            const vendorIdString = vendor._id.toString();
+            if (
+              vendor.email &&
+              !order.sentVendorNotifications.some(
+                (v) => v._id.toString() === vendorIdString
+              )
+            ) {
+              // Filter order items relevant to the current vendor
+              const vendorItems = order.items.filter(
+                (item) => item.vendor._id.toString() === vendorIdString
+              );
+              const vendorEmailContent = getVendorOrderNotificationEmail(
+                order,
+                vendor,
+                vendorItems
+              );
+              try {
+                await sendEmail(
+                  vendor.email,
+                  `New Order #${order._id} Notification - Aharraa`,
+                  vendorEmailContent.text, // Pass text content
+                  vendorEmailContent.html // Pass HTML content
+                );
+                // Mark vendor as notified and save the order
+                order.sentVendorNotifications.push(vendor._id);
+                await order.save();
+              } catch (emailError) {
+                console.error(
+                  `Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`,
+                  emailError.message
+                );
+              }
+            } else if (
+              order.sentVendorNotifications.some(
+                (v) => v._id.toString() === vendorIdString
+              )
+            ) {
+              console.log(
+                `Vendor notification email already sent to ${vendor.email} for order ${order._id}. Skipping.`
+              );
+            } else {
+              console.warn(
+                `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
+              );
+            }
           }
-        } catch (cartClearError) {
-          console.error(
-            `Failed to clear cart for user ${order.user} after order ${order._id}:`,
-            cartClearError.message
+
+          // Clear user's cart and attached cart items after successful order
+          try {
+            const userCart = await Cart.findOne({ user: order.user });
+            if (userCart) {
+              await CartItem.deleteMany({ cart: userCart._id });
+              await Cart.deleteOne({ _id: userCart._id });
+            }
+          } catch (cartClearError) {
+            console.error(
+              `Failed to clear cart for user ${order.user} after order ${order._id}:`,
+              cartClearError.message
+            );
+          }
+        } else {
+          console.log(
+            `Order ${orderId} is already confirmed. Skipping email sending and cart clearing.`
           );
         }
       } else if (paymentStatus === "FAILED") {
         order.status = "failed";
+        await order.save(); // Save status change for failed payments
       } else {
         // Handle other statuses if necessary, e.g., PENDING, REFUNDED
         console.log(
           `Webhook received for order ${orderId} with status: ${paymentStatus}. No status change applied.`
         );
       }
-      await order.save();
       res.status(200).json({ message: "Webhook processed successfully" });
     } catch (error) {
       console.error("Error processing PAYMENT_SUCCESS_WEBHOOK:", error);

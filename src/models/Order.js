@@ -82,6 +82,8 @@ const OrderSchema = new mongoose.Schema({
   deliveryAddresses: { type: Map, of: AddressSchema, required: true },
   invoiceUrl: { type: String }, // Add invoiceUrl field
   refunds: [{ type: RefundSchema }], // Add a field to store refund details
+  isConfirmationEmailSent: { type: Boolean, default: false }, // Add this field to track email status
+  sentVendorNotifications: [{ type: mongoose.Schema.Types.ObjectId, ref: "Vendor" }], // Track vendors who have received notifications
 });
 
 module.exports = mongoose.model("Order", OrderSchema);
