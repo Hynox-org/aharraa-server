@@ -804,7 +804,7 @@ router.get(
         };
 
         // Return processedOrder instead of original order
-        return res.status(200).json({ order: processedOrder, cashfreeDetails });
+        return res.status(200).json({ message: "Payment Verified Successfully" });
       } catch (cashfreeError) {
         console.error("Error verifying Cashfree payment:", cashfreeError);
         return res.status(500).json({
