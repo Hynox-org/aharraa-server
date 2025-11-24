@@ -71,7 +71,7 @@ const OrderSchema = new mongoose.Schema({
   paymentSessionId: { type: String },
   paymentDetails: {
     cfPaymentId: { type: String },
-    status: { type: String, enum: ["SUCCESS", "FAILED", "PENDING"] },
+    status: { type: String, enum: ["SUCCESS", "FAILED", "PENDING", "PAID"] },
     paymentTime: { type: Date },
     bankReference: { type: String },
     method: { type: String },
