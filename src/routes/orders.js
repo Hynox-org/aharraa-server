@@ -754,9 +754,21 @@ router.get(
       try {
         const cashfreeDetails = await getCashfreeOrderDetails(order._id);
 
+        // Explicitly handle scenarios where no update is needed based on current order status and payment status.
+        // Scenario 1: Order is already confirmed AND payment is PAID. No update needed.
+        // Scenario 2: Order is cancelled AND payment is PAID. No update needed.
         if (
+          (order.status === "confirmed" && cashfreeDetails.order_status === "PAID") ||
+          (order.status === "cancelled" && cashfreeDetails.order_status === "PAID")
+        ) {
+          console.log(`Order ${orderId} already in terminal state (${order.status}) with payment status ${cashfreeDetails.order_status}. No update applied.`);
+          return res.status(200).json({ message: "Order status already handled, no update needed.", order });
+        }
+        // Scenario 3: Order is non-confirmed, non-canceled, and payment is PAID. Confirm the order.
+        else if (
           cashfreeDetails.order_status === "PAID" &&
-          order.status !== "confirmed"
+          order.status !== "confirmed" &&
+          order.status !== "cancelled"
         ) {
           try {
             const token = req.headers.authorization.split(" ")[1];
@@ -779,66 +791,62 @@ router.get(
             console.log(err);
           }
           order.status = "confirmed";
+          // Also set payment details from Cashfree for completeness
+          order.paymentDetails = {
+            cfPaymentId: cashfreeDetails.cf_order_id, // Assuming this is available
+            status: cashfreeDetails.order_status,
+            paymentTime: new Date(), // Use current time or cashfreeDetails.payment_time if available
+            bankReference: cashfreeDetails.bank_reference, // Assuming this is available
+            method: cashfreeDetails.payment_group, // Assuming this is available
+          };
           await order.save();
-        } else if (
+          return res.status(200).json({ message: "Payment Verified Successfully, Order Confirmed.", order });
+        }
+        // Scenario 4: Payment failed and order is not yet failed. Update order status to failed.
+        else if (
           cashfreeDetails.order_status === "FAILED" &&
           order.status !== "failed"
         ) {
           order.status = "failed";
+          // Update payment details for failed status
+          order.paymentDetails = {
+            cfPaymentId: cashfreeDetails.cf_order_id,
+            status: cashfreeDetails.order_status,
+            paymentTime: new Date(),
+            bankReference: cashfreeDetails.bank_reference,
+            method: cashfreeDetails.payment_group,
+          };
           await order.save();
+          return res.status(200).json({ message: "Payment Verified, Order Failed.", order });
+        }
+        // Scenario 5: Payment is pending and order is not yet pending (and not confirmed/cancelled/failed). Update order status to pending.
+        else if (
+            cashfreeDetails.order_status === "PENDING" &&
+            order.status !== "pending" &&
+            order.status !== "confirmed" &&
+            order.status !== "cancelled" &&
+            order.status !== "failed"
+        ) {
+            order.status = "pending";
+            // Update payment details for pending status
+            order.paymentDetails = {
+                cfPaymentId: cashfreeDetails.cf_order_id,
+                status: cashfreeDetails.order_status,
+                paymentTime: new Date(),
+                bankReference: cashfreeDetails.bank_reference,
+                method: cashfreeDetails.payment_group,
+            };
+            await order.save();
+            return res.status(200).json({ message: "Payment Verified, Order Pending.", order });
+        }
+        // Scenario 6: Other states - no explicit action or status already matches.
+        else {
+            console.log(
+                `Order ${orderId} is in status ${order.status} and Cashfree status is ${cashfreeDetails.order_status}. No status change applied.`
+            );
+            return res.status(200).json({ message: "Payment Verified, No status change applied.", order });
         }
 
-        // Rename variable to avoid shadowing
-        const processedOrder = {
-          _id: order._id,
-          user: order.user
-            ? {
-                id: order.user._id,
-                name: order.user.name,
-                email: order.user.email,
-              }
-            : null,
-          items: order.items.map((item) => ({
-            id: item.id,
-            menu: item.menu
-              ? {
-                  id: item.menu._id,
-                  name: item.menu.name,
-                  image: item.menu.image,
-                }
-              : null,
-            plan: item.plan
-              ? {
-                  id: item.plan._id,
-                  name: item.plan.name,
-                }
-              : null,
-            vendor: item.vendor
-              ? {
-                  id: item.vendor._id,
-                  name: item.vendor.name,
-                }
-              : null,
-            quantity: item.quantity,
-            personDetails: item.personDetails,
-            startDate: item.startDate,
-            endDate: item.endDate,
-            skippedDates: item.skippedDates,
-            itemTotalPrice: item.itemTotalPrice,
-          })),
-          paymentMethod: order.paymentMethod,
-          totalAmount: order.totalAmount,
-          currency: order.currency,
-          orderDate: order.orderDate,
-          status: order.status,
-          deliveryAddresses: order.deliveryAddresses,
-          createdAt: order.createdAt,
-          updatedAt: order.updatedAt,
-          // add other order-level fields as needed
-        };
-
-        // Return processedOrder instead of original order
-        return res.status(200).json({ message: "Payment Verified Successfully" });
       } catch (cashfreeError) {
         console.error("Error verifying Cashfree payment:", cashfreeError);
         return res.status(500).json({
