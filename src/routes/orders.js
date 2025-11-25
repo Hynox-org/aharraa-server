@@ -484,9 +484,9 @@ router.post("/", authMiddleware.protect, async (req, res) => {
 
     const customerDetails = {
       customer_id: userId,
-      customer_phone: req.user.phone || "9898989898",
+      customer_phone: "",
       customer_email: req.user.email || "test@example.com",
-      customer_name: req.user.name || "Test User",
+      customer_name: req.user.name || req.user.email || "Test User",
     };
 
     const MAX_CASHFREE_AMOUNT = 100000;
