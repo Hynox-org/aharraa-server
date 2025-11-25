@@ -36,6 +36,12 @@ const createCashfreeOrder = async (orderId, orderAmount, customerDetails) => {
         return_url: `${process.env.NEXT_FRONTEND_BASE_URL}/order-status/${orderId}`,
         notify_url: `${process.env.BACKEND_BASE_URL}/api/orders/webhook`,
       },
+      payment_methods_filters: {
+        methods: {
+          action: "ALLOW",
+          values: ["credit_card", "debit_card", "upi"],
+        },
+      },
     }),
   };
 
@@ -101,7 +107,13 @@ module.exports = {
   getCashfreeOrderDetails,
 };
 
-const initiateCashfreeRefund = async (orderId, refundAmount, refundId, refundNote, refundSpeed = "STANDARD") => {
+const initiateCashfreeRefund = async (
+  orderId,
+  refundAmount,
+  refundId,
+  refundNote,
+  refundSpeed = "STANDARD"
+) => {
   let cashfreeBaseUrl;
   if (process.env.NODE_ENV === "production") {
     cashfreeBaseUrl = "https://api.cashfree.com";
@@ -233,7 +245,12 @@ const getAllCashfreeRefundsForOrder = async (orderId) => {
   }
 };
 
-const updateCashfreeRefund = async (orderId, refundId, newRefundStatus, remarks) => {
+const updateCashfreeRefund = async (
+  orderId,
+  refundId,
+  newRefundStatus,
+  remarks
+) => {
   let cashfreeBaseUrl;
   if (process.env.NODE_ENV === "production") {
     cashfreeBaseUrl = "https://api.cashfree.com";

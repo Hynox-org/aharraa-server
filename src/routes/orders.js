@@ -484,7 +484,7 @@ router.post("/", authMiddleware.protect, async (req, res) => {
 
     const customerDetails = {
       customer_id: userId,
-      customer_phone: "",
+      customer_phone: req.user.phone || "1234567890",
       customer_email: req.user.email || "test@example.com",
       customer_name: req.user.name || req.user.email || "Test User",
     };
