@@ -96,10 +96,10 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'User not found in database' });
     }
 
-    // // Check if the user has an admin role
-    // if (user.role !== 'admin') {
-    //   return res.status(403).json({ message: 'Access Denied: Not an admin' });
-    // }
+    // Check if the user has an admin role
+    if (user.role !== 'admin') {
+      return res.status(403).json({ message: 'Access Denied: Not an admin' });
+    }
 
     res.status(200).json({
       message: 'Login successful',
@@ -224,12 +224,12 @@ router.get('/orders', async (req, res) => {
       .populate({
         path: 'items.menu',
         model: 'Menu',
-        select: 'title'
+        select: 'name description' // Added description for Menu
       })
       .populate({
         path: 'items.plan',
         model: 'Plan',
-        select: 'name description'
+        select: 'name description duration price' // Added more fields for Plan
       });
     res.json(orders);
   } catch (err) {
@@ -251,12 +251,12 @@ router.get('/orders/:id', async (req, res) => {
       .populate({
         path: 'items.menu',
         model: 'Menu',
-        select: 'title'
+        select: 'name description' // Added description for Menu
       })
       .populate({
         path: 'items.plan',
         model: 'Plan',
-        select: 'name description'
+        select: 'name description duration price' // Added more fields for Plan
       });
 
     if (!order) {
