@@ -30,7 +30,8 @@ const UserSchema = new mongoose.Schema({
     lon: { type: Number },
   },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  role: { type: String, enum: ['user', 'admin'], default: 'user' }
 });
 
 // Method to compare passwords (no longer needed as Supabase handles it)

@@ -112,6 +112,7 @@ router.post("/signup", async (req, res) => {
     res.status(201).json({
       message: "User registered successfully",
       accessToken: data.session.access_token,
+      role: user.role, // Include role in response
     });
   } catch (err) {
     console.error(err);
@@ -198,6 +199,7 @@ router.post("/signin", async (req, res) => {
     res.status(200).json({
       message: "Login successful",
       accessToken: data.session.access_token,
+      role: user.role, // Include role in response
     });
   } catch (err) {
     console.error(err);
@@ -449,6 +451,7 @@ router.get("/callback", async (req, res) => {
     return res.status(200).json({
       message: "OAuth login successful",
       accessToken: data.session.access_token,
+      role: user.role, // Include role in response
     });
   }
 
