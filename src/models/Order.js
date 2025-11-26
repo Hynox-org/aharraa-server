@@ -12,7 +12,7 @@ const AddressSchema = new mongoose.Schema(
 const RefundSchema = new mongoose.Schema(
   {
     cfRefundId: { type: String, required: true },
-    refundId: { type: String, required: true, unique: true }, // Our internal unique refund ID
+    refundId: { type: String, required: true }, // Our internal unique refund ID
     amount: { type: Number, required: true },
     currency: { type: String, default: "INR" },
     status: {
