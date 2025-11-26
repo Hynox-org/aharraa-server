@@ -88,6 +88,29 @@ router.get('/profile', authMiddleware.protect, async (req, res) => {
   }
 });
 
+router.get("/verify-email", authMiddleware.protect, async (req, res) => {
+  try {
+    const supabaseId = req.user.supabaseId; // From JWT middleware
+
+    // Update MongoDB user
+    const user = await User.findOneAndUpdate(
+      { supabaseId },
+      { emailVerified: true },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({ message: "Email verified successfully", user });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+
 /**
  * @swagger
  * /api/users/profile:

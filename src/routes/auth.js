@@ -9,6 +9,7 @@ const { supabaseAnon, supabaseServiceRole } = require("../config/supabase"); // 
 const router = express.Router();
 
 const registerSchema = Joi.object({
+  name: Joi.string().required(),
   email: Joi.string().email().required(),
   password: Joi.string().min(6).required(),
 });
@@ -81,18 +82,24 @@ router.post("/signup", async (req, res) => {
       return res.status(400).json({ message: validationError.details[0].message });
     }
 
-    const { email, password } = req.body;
+    const { name, email, password } = req.body;
 
-    // Check if user already exists in MongoDB (optional, Supabase will also handle unique emails)
+    // Check if user already exists in MongoDB
     let user = await User.findOne({ email });
     if (user) {
       return res.status(400).json({ message: "Email already exists" });
     }
 
-    // Register user with Supabase Auth
+    // Register user with Supabase Auth (with email confirmation)
     const { data, error: supabaseError } = await supabaseAnon.auth.signUp({
       email,
       password,
+      options: {
+        emailRedirectTo: `${process.env.NEXT_FRONTEND_BASE_URL}/auth/confirm`, // Redirect after email confirmation
+        data: {
+          name: name, // Pass the name to Supabase user metadata
+        },
+      }
     });
 
     if (supabaseError) {
@@ -104,21 +111,68 @@ router.post("/signup", async (req, res) => {
       return res.status(500).json({ message: "Supabase registration failed: No user data returned." });
     }
 
-    // Save user data to MongoDB
-    user = new User({ name : email, email, supabaseId: data.user.id });
+    // Save user data to MongoDB (mark as unverified initially)
+    user = new User({ 
+      name, 
+      email, 
+      supabaseId: data.user.id,
+      emailVerified: false // Add this field to track verification
+    });
     await user.save();
 
-    // Return Supabase access token
+    // When email confirmation is enabled, session will be null
     res.status(201).json({
-      message: "User registered successfully",
-      accessToken: data.session.access_token,
-      role: user.role, // Include role in response
+      message: "Registration successful! Please check your email to confirm your account.",
+      requiresEmailConfirmation: true,
+      // Do NOT return accessToken here since user is unconfirmed
     });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Internal server error" });
   }
 });
+
+router.post("/resend-confirmation", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // Check if user exists and is unconfirmed
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.emailVerified) {
+      return res.status(400).json({ message: "Email already confirmed" });
+    }
+
+    // Resend confirmation email via Supabase
+    const { error } = await supabaseAnon.auth.resend({
+      type: 'signup',
+      email: email,
+      options: {
+        emailRedirectTo: `${process.env.FRONTEND_URL}/auth/confirm`
+      }
+    });
+
+    if (error) {
+      console.error("Supabase resend error:", error);
+      return res.status(400).json({ message: error.message });
+    }
+
+    res.status(200).json({ 
+      message: "Confirmation email resent successfully" 
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 
 /**
  * @openapi
