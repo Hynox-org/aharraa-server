@@ -293,8 +293,7 @@ router.post("/:userId/add", protect, async (req, res) => {
       }
 
       existingCartItem.quantity += quantity;
-      existingCartItem.itemTotalPrice =
-        existingCartItem.quantity * plan.durationDays * mealTimePricesSum;
+      existingCartItem.itemTotalPrice = plan.durationDays * mealTimePricesSum;
       if (personDetails) existingCartItem.personDetails = personDetails;
       if (selectedMealTimes) existingCartItem.selectedMealTimes = selectedMealTimes;
       await existingCartItem.save();
@@ -316,7 +315,7 @@ router.post("/:userId/add", protect, async (req, res) => {
         // Fallback to perDayPrice if no meal times selected or prices not defined
         mealTimePricesSum = menu.perDayPrice;
       }
-      const itemTotalPrice = quantity * plan.durationDays * mealTimePricesSum;
+      const itemTotalPrice = plan.durationDays * mealTimePricesSum;
 
       const newCartItem = new CartItem({
         user: userId,
@@ -449,8 +448,7 @@ router.put(
         // Fallback to perDayPrice if no meal times selected or prices not defined
         mealTimePricesSum = cartItem.menu.perDayPrice;
       }
-      cartItem.itemTotalPrice =
-        cartItem.quantity * cartItem.plan.durationDays * mealTimePricesSum;
+      cartItem.itemTotalPrice = cartItem.plan.durationDays * mealTimePricesSum;
       await cartItem.save();
 
       const cart = await Cart.findOne({ user: req.params.userId });

@@ -12,7 +12,7 @@ export function calculateDeliveryCost(
 
       // Only add delivery cost if meal times are selected
       if (numberOfSelectedMealTimes > 0) {
-        totalDeliveryCost += planDays * numberOfSelectedMealTimes * quantity * deliveryCostPerMealPerDay;
+        totalDeliveryCost += planDays * numberOfSelectedMealTimes * deliveryCostPerMealPerDay;
       }
     }
   }
