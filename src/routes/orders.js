@@ -482,11 +482,28 @@ router.post("/", authMiddleware.protect, async (req, res) => {
 
     await order.save(); // Save the order to get its _id
 
+    // Attempt to fetch default customer details from the first cart item's personDetails
+    let defaultCustomerName = req.user.name || req.user.email || "Test User";
+    let defaultCustomerPhone = req.user.phone || "1234567890";
+    let defaultCustomerEmail = req.user.email || "test@example.com";
+
+    // Find the first item with personDetails and extract the first person's details
+    for (const item of checkoutData.items) {
+      if (item.personDetails && item.personDetails.length > 0) {
+        const firstPerson = item.personDetails[0];
+        defaultCustomerName = firstPerson.name;
+        defaultCustomerPhone = firstPerson.phoneNumber;
+        // Optionally, if there's an email in personDetailsSchema, use it here
+        // For now, retaining req.user.email as the primary source for email
+        break; // Use details from the first item found
+      }
+    }
+
     const customerDetails = {
       customer_id: userId,
-      customer_phone: req.user.phone || "1234567890",
-      customer_email: req.user.email || "test@example.com",
-      customer_name: req.user.name || req.user.email || "Test User",
+      customer_phone: defaultCustomerPhone,
+      customer_email: defaultCustomerEmail,
+      customer_name: defaultCustomerName,
     };
 
     const MAX_CASHFREE_AMOUNT = 100000;
