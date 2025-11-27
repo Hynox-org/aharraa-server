@@ -1,10 +1,16 @@
 import React, { useMemo } from 'react';
-import {
+const {
   calculateDeliveryCost,
   calculatePlatformCost,
   calculateGstCost,
   calculateGrandTotal,
-} from './pricingCalculations';
+} = require('./pricingCalculations');
+// import {
+//   calculateDeliveryCost,
+//   calculatePlatformCost,
+//   calculateGstCost,
+//   calculateGrandTotal,
+// } from './pricingCalculations';
 
 // Dummy type definitions for illustration, assuming a JavaScript context
 // In a real TypeScript project, these would come from a .d.ts file or similar.
