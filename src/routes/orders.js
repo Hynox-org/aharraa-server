@@ -19,7 +19,7 @@ const {
   getAllCashfreeRefundsForOrder, // Import the new get all refunds for order function
   updateCashfreeRefund, // Import the new update refund function
 } = require("../utils/cashfree");
-// const { sendEmail } = require("../utils/emailService"); // Import email service
+const { sendEmail } = require("../utils/emailService"); // Import email service
 const { generateInvoicePdf } = require("../utils/pdfGenerator"); // Import PDF generator
 const {
   getUserOrderConfirmationEmail,
@@ -191,87 +191,87 @@ router.post("/webhook", async (req, res) => {
             );
           }
 
-          // // Send Order Confirmation Email to User
-          // if (!order.isConfirmationEmailSent && user && user.email) {
-          //   const userEmailContent = getUserOrderConfirmationEmail(
-          //     order,
-          //     user,
-          //     invoicePdfUrl
-          //   );
-          //   try {
-          //     await sendEmail(
-          //       user.email,
-          //       `Order #${order._id} Confirmation - Aharraa`,
-          //       userEmailContent.text, // Pass text content
-          //       userEmailContent.html // Pass HTML content
-          //     );
-          //     order.isConfirmationEmailSent = true; // Mark as sent
-          //     await order.save(); // Save to persist email sent status
-          //   } catch (emailError) {
-          //     console.error(
-          //       `Failed to send order confirmation email to user ${user.email} for order ${order._id}:`,
-          //       emailError.message
-          //     );
-          //   }
-          // } else if (order.isConfirmationEmailSent) {
-          //   console.log(
-          //     `Order confirmation email already sent for order ${order._id}. Skipping.`
-          //   );
-          // } else {
-          //   console.warn(
-          //     `User email not available for order ${order._id}, skipping user email.`
-          //   );
-          // }
+          // Send Order Confirmation Email to User
+          if (!order.isConfirmationEmailSent && user && user.email) {
+            const userEmailContent = getUserOrderConfirmationEmail(
+              order,
+              user,
+              invoicePdfUrl
+            );
+            try {
+              await sendEmail(
+                user.email,
+                `Order #${order._id} Confirmation - Aharraa`,
+                userEmailContent.text, // Pass text content
+                userEmailContent.html // Pass HTML content
+              );
+              order.isConfirmationEmailSent = true; // Mark as sent
+              await order.save(); // Save to persist email sent status
+            } catch (emailError) {
+              console.error(
+                `Failed to send order confirmation email to user ${user.email} for order ${order._id}:`,
+                emailError.message
+              );
+            }
+          } else if (order.isConfirmationEmailSent) {
+            console.log(
+              `Order confirmation email already sent for order ${order._id}. Skipping.`
+            );
+          } else {
+            console.warn(
+              `User email not available for order ${order._id}, skipping user email.`
+            );
+          }
 
-          // // Send Order Notification Email to Vendors
-          // for (const vendor of vendors) {
-          //   // Check if this vendor has already received a notification for this order
-          //   const vendorIdString = vendor._id.toString();
-          //   if (
-          //     vendor.email &&
-          //     !order.sentVendorNotifications.some(
-          //       (v) => v._id.toString() === vendorIdString
-          //     )
-          //   ) {
-          //     // Filter order items relevant to the current vendor
-          //     const vendorItems = order.items.filter(
-          //       (item) => item.vendor._id.toString() === vendorIdString
-          //     );
-          //     const vendorEmailContent = getVendorOrderNotificationEmail(
-          //       order,
-          //       vendor,
-          //       vendorItems
-          //     );
-          //     try {
-          //       await sendEmail(
-          //         vendor.email,
-          //         `New Order #${order._id} Notification - Aharraa`,
-          //         vendorEmailContent.text, // Pass text content
-          //         vendorEmailContent.html // Pass HTML content
-          //       );
-          //       // Mark vendor as notified and save the order
-          //       order.sentVendorNotifications.push(vendor._id);
-          //       await order.save();
-          //     } catch (emailError) {
-          //       console.error(
-          //         `Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`,
-          //         emailError.message
-          //       );
-          //     }
-          //   } else if (
-          //     order.sentVendorNotifications.some(
-          //       (v) => v._id.toString() === vendorIdString
-          //     )
-          //   ) {
-          //     console.log(
-          //       `Vendor notification email already sent to ${vendor.email} for order ${order._id}. Skipping.`
-          //     );
-          //   } else {
-          //     console.warn(
-          //       `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
-          //     );
-          //   }
-          // }
+          // Send Order Notification Email to Vendors
+          for (const vendor of vendors) {
+            // Check if this vendor has already received a notification for this order
+            const vendorIdString = vendor._id.toString();
+            if (
+              vendor.email &&
+              !order.sentVendorNotifications.some(
+                (v) => v._id.toString() === vendorIdString
+              )
+            ) {
+              // Filter order items relevant to the current vendor
+              const vendorItems = order.items.filter(
+                (item) => item.vendor._id.toString() === vendorIdString
+              );
+              const vendorEmailContent = getVendorOrderNotificationEmail(
+                order,
+                vendor,
+                vendorItems
+              );
+              try {
+                await sendEmail(
+                  vendor.email,
+                  `New Order #${order._id} Notification - Aharraa`,
+                  vendorEmailContent.text, // Pass text content
+                  vendorEmailContent.html // Pass HTML content
+                );
+                // Mark vendor as notified and save the order
+                order.sentVendorNotifications.push(vendor._id);
+                await order.save();
+              } catch (emailError) {
+                console.error(
+                  `Failed to send order notification email to vendor ${vendor.email} for order ${order._id}:`,
+                  emailError.message
+                );
+              }
+            } else if (
+              order.sentVendorNotifications.some(
+                (v) => v._id.toString() === vendorIdString
+              )
+            ) {
+              console.log(
+                `Vendor notification email already sent to ${vendor.email} for order ${order._id}. Skipping.`
+              );
+            } else {
+              console.warn(
+                `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
+              );
+            }
+          }
 
           // Clear user's cart and attached cart items after successful order
           try {
@@ -370,63 +370,63 @@ router.post("/test-email-pdf", async (req, res) => {
         .json({ message: "Failed to generate invoice PDF" });
     }
 
-    // // Send Order Confirmation Email to User
-    // if (user && user.email) {
-    //   const userEmailContent = getUserOrderConfirmationEmail(
-    //     order,
-    //     user,
-    //     invoicePdfUrl
-    //   );
-    //   try {
-    //     await sendEmail(
-    //       user.email,
-    //       `Order #${order._id} Confirmation - Aharraa (Test)`,
-    //       userEmailContent.text,
-    //       userEmailContent.html
-    //     );
-    //   } catch (emailError) {
-    //     console.error(
-    //       `Failed to send test order confirmation email to user ${user.email} for order ${order._id}:`,
-    //       emailError.message
-    //     );
-    //     return res.status(500).json({ message: "Failed to send email" });
-    //   }
-    // } else {
-    //   return res.status(400).json({ message: "User email not available" });
-    // }
+    // Send Order Confirmation Email to User
+    if (user && user.email) {
+      const userEmailContent = getUserOrderConfirmationEmail(
+        order,
+        user,
+        invoicePdfUrl
+      );
+      try {
+        await sendEmail(
+          user.email,
+          `Order #${order._id} Confirmation - Aharraa (Test)`,
+          userEmailContent.text,
+          userEmailContent.html
+        );
+      } catch (emailError) {
+        console.error(
+          `Failed to send test order confirmation email to user ${user.email} for order ${order._id}:`,
+          emailError.message
+        );
+        return res.status(500).json({ message: "Failed to send email" });
+      }
+    } else {
+      return res.status(400).json({ message: "User email not available" });
+    }
 
-    // // Send Order Notification Email to Vendors
-    // for (const vendor of vendors) {
-    //   if (vendor.email) {
-    //     // Filter order items relevant to the current vendor
-    //     const vendorItems = order.items.filter(
-    //       (item) => item.vendor._id.toString() === vendor._id.toString()
-    //     );
-    //     const vendorEmailContent = getVendorOrderNotificationEmail(
-    //       order,
-    //       vendor,
-    //       vendorItems
-    //     );
-    //     try {
-    //       await sendEmail(
-    //         vendor.email,
-    //         `New Order #${order._id} Notification - Aharraa (Test)`,
-    //         vendorEmailContent.text, // Pass text content
-    //         vendorEmailContent.html // Pass HTML content
-    //       );
-    //     } catch (emailError) {
-    //       console.error(
-    //         `Failed to send test order notification email to vendor ${vendor.email} for order ${order._id}:`,
-    //         emailError.message
-    //       );
-    //       // Do not return here, continue to send to other vendors
-    //     }
-    //   } else {
-    //     console.warn(
-    //       `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
-    //     );
-    //   }
-    // }
+    // Send Order Notification Email to Vendors
+    for (const vendor of vendors) {
+      if (vendor.email) {
+        // Filter order items relevant to the current vendor
+        const vendorItems = order.items.filter(
+          (item) => item.vendor._id.toString() === vendor._id.toString()
+        );
+        const vendorEmailContent = getVendorOrderNotificationEmail(
+          order,
+          vendor,
+          vendorItems
+        );
+        try {
+          await sendEmail(
+            vendor.email,
+            `New Order #${order._id} Notification - Aharraa (Test)`,
+            vendorEmailContent.text, // Pass text content
+            vendorEmailContent.html // Pass HTML content
+          );
+        } catch (emailError) {
+          console.error(
+            `Failed to send test order notification email to vendor ${vendor.email} for order ${order._id}:`,
+            emailError.message
+          );
+          // Do not return here, continue to send to other vendors
+        }
+      } else {
+        console.warn(
+          `Vendor email not available for vendor ${vendor._id}, skipping vendor email.`
+        );
+      }
+    }
 
     res.status(200).json({
       message: "Test PDF generated and email sent successfully",
@@ -732,35 +732,38 @@ router.get(
     try {
       const { orderId } = req.params;
 
+      // Validate order ID format
       if (!mongoose.Types.ObjectId.isValid(orderId)) {
-        return res
-          .status(400)
-          .json({ error: "Bad Request", details: "Invalid order ID format." });
+        return res.status(400).json({ 
+          error: "Bad Request", 
+          details: "Invalid order ID format." 
+        });
       }
 
+      // Fetch order with all required relations
       const order = await Order.findById(orderId)
         .populate("user")
-        .populate("items.menu") // Changed from items.meal to items.menu
+        .populate("items.menu")
         .populate("items.plan")
         .populate("items.vendor")
         .populate("sentVendorNotifications");
 
       if (!order) {
-        return res
-          .status(404)
-          .json({ error: "Not Found", details: "Order not found." });
+        return res.status(404).json({ 
+          error: "Not Found", 
+          details: "Order not found." 
+        });
       }
 
-      // Optional: Add authorization check
-      const orderUserId = order.user ? order.user._id.toString() : null;
-      console.log({orderUserId})
-      console.log({"req.user":req.user})
+      // Authorization check
+      const orderUserId = order.user?._id.toString();
       if (!req.user || !orderUserId || req.user.id !== orderUserId) {
         return res.status(403).json({
           message: "Access denied. You can only verify your own order details.",
         });
       }
 
+      // Handle COD orders
       if (order.paymentMethod === "COD") {
         return res.status(200).json({
           message: "COD order, no external payment verification needed.",
@@ -768,6 +771,7 @@ router.get(
         });
       }
 
+      // Validate payment session ID
       if (!order.paymentSessionId) {
         return res.status(400).json({
           error: "Bad Request",
@@ -775,177 +779,228 @@ router.get(
         });
       }
 
+      // Fetch user and vendors for email notifications
+      const user = await User.findById(order.user);
+      if (!user) {
+        console.error(`User not found for order ${orderId}`);
+      }
+
+      const vendorIds = [...new Set(order.items.map((item) => item.vendor._id.toString()))];
+      const vendors = await Vendor.find({ _id: { $in: vendorIds } });
+
+      // Helper function to generate invoice PDF
+      const generateInvoiceIfNeeded = async () => {
+        if (!order.invoiceUrl && user) {
+          try {
+            const invoiceUrl = await generateInvoicePdf(order, user);
+            order.invoiceUrl = invoiceUrl;
+            console.log(`Invoice PDF generated for order ${order._id}.`);
+            return invoiceUrl;
+          } catch (pdfError) {
+            console.error(
+              `Failed to generate invoice PDF for order ${order._id}:`,
+              pdfError
+            );
+            return null;
+          }
+        }
+        return order.invoiceUrl;
+      };
+
+      // Helper function to send user confirmation email
+      const sendUserConfirmationEmail = async (invoiceUrl) => {
+        if (!order.isConfirmationEmailSent && user?.email) {
+          const userEmailContent = getUserOrderConfirmationEmail(order, user, invoiceUrl);
+          try {
+            await sendEmail(
+              user.email,
+              `Order #${order._id} Confirmation - Aharraa`,
+              userEmailContent.text,
+              userEmailContent.html
+            );
+            order.isConfirmationEmailSent = true;
+            console.log(`Order confirmation email sent to ${user.email} for order ${order._id}.`);
+          } catch (emailError) {
+            console.error(
+              `Failed to send order confirmation email to ${user.email} for order ${order._id}:`,
+              emailError.message
+            );
+          }
+        } else if (order.isConfirmationEmailSent) {
+          console.log(`Order confirmation email already sent for order ${order._id}. Skipping.`);
+        } else {
+          console.warn(`User email not available for order ${order._id}, skipping user email.`);
+        }
+      };
+
+      // Helper function to send vendor notification emails
+      const sendVendorNotificationEmails = async () => {
+        for (const vendor of vendors) {
+          const vendorIdString = vendor._id.toString();
+          
+          if (
+            vendor.email &&
+            !order.sentVendorNotifications.some((v) => v._id.toString() === vendorIdString)
+          ) {
+            const vendorItems = order.items.filter(
+              (item) => item.vendor._id.toString() === vendorIdString
+            );
+            const vendorEmailContent = getVendorOrderNotificationEmail(order, vendor, vendorItems);
+            
+            try {
+              await sendEmail(
+                vendor.email,
+                `New Order #${order._id} Notification - Aharraa`,
+                vendorEmailContent.text,
+                vendorEmailContent.html
+              );
+              order.sentVendorNotifications.push(vendor._id);
+              console.log(`Vendor notification email sent to ${vendor.email} for order ${order._id}.`);
+            } catch (emailError) {
+              console.error(
+                `Failed to send vendor notification email to ${vendor.email} for order ${order._id}:`,
+                emailError.message
+              );
+            }
+          } else if (
+            order.sentVendorNotifications.some((v) => v._id.toString() === vendorIdString)
+          ) {
+            console.log(`Vendor notification already sent to ${vendor.email} for order ${order._id}. Skipping.`);
+          } else {
+            console.warn(`Vendor email not available for vendor ${vendor._id}, skipping.`);
+          }
+        }
+      };
+
+      // Helper function to clear user cart
+      const clearUserCart = async () => {
+        try {
+          const userCart = await Cart.findOne({ user: order.user });
+          if (userCart) {
+            await CartItem.deleteMany({ cart: userCart._id });
+            await Cart.deleteOne({ _id: userCart._id });
+            console.log(`Cart cleared for user ${order.user} after order ${order._id}.`);
+          }
+        } catch (cartClearError) {
+          console.error(
+            `Failed to clear cart for user ${order.user} after order ${order._id}:`,
+            cartClearError.message
+          );
+        }
+      };
+
+      // Get Cashfree payment details
       try {
         const cashfreeDetails = await getCashfreeOrderDetails(order._id);
+        const cfStatus = cashfreeDetails.order_status;
+        let invoiceUrl = null;
 
-        // Explicitly handle scenarios where no update is needed based on current order status and payment status.
-        // Scenario 1: Order is already confirmed AND payment is PAID. No update needed.
-        // Scenario 2: Order is cancelled AND payment is PAID. No update needed.
+        // Scenario 1: Order already in terminal state (confirmed/cancelled) with PAID status
         if (
-          (order.status === "confirmed" &&
-            cashfreeDetails.order_status === "PAID") ||
-          (order.status === "cancelled" &&
-            cashfreeDetails.order_status === "PAID")
+          ((order.status === "confirmed" || order.status === "cancelled") && cfStatus === "PAID")
         ) {
           console.log(
-            `Order ${orderId} already in terminal state (${order.status}) with payment status ${cashfreeDetails.order_status}. No update applied.`
+            `Order ${orderId} already in terminal state (${order.status}) with payment status ${cfStatus}. No update applied.`
           );
 
-          // Generate Invoice PDF and get public URL if not already present, even if order is already confirmed/cancelled but payment is paid.
-          if (cashfreeDetails.order_status === "PAID" && !order.invoiceUrl) {
-            try {
-              // Fetch user details for invoice generation
-              const user = await User.findById(order.user);
-              if (!user) {
-                console.error(
-                  `User not found for order ${order._id} during PDF generation in already-processed state.`
-                );
-                // Continue, but log the error
-              } else {
-                const invoicePdfUrl = await generateInvoicePdf(order, user);
-                order.invoiceUrl = invoicePdfUrl; // Save the invoice URL to the order
-                console.log(
-                  `Invoice PDF generated and attached for order ${order._id} in already-processed state.`
-                );
-                await order.save(); // Save to persist the invoice URL
-              }
-            } catch (pdfError) {
-              console.error(
-                `Failed to generate or upload invoice PDF for order ${order._id} during payment verification in already-processed state:`,
-                pdfError
-              );
-              // Do not block the order confirmation if PDF generation fails
-            }
-          }
-          return res
-            .status(200)
-            .json({
-              message: "Order status already handled, no update needed.",
-              order,
-            });
-        }
-        // Scenario 3: Order is non-confirmed, non-canceled, and payment is PAID. Confirm the order.
-        else if (
-          cashfreeDetails.order_status === "PAID" &&
-          order.status !== "confirmed" &&
-          order.status !== "cancelled"
-        ) {
-          try {
-            const token = req.headers.authorization.split(" ")[1];
-            const resCartClear = await fetch(
-              `${process.env.BACKEND_BASE_URL}/api/cart/${order.user}/clear`,
-              {
-                method: "DELETE",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${token}`,
-                },
-              }
-            );
-            if (!resCartClear.ok) {
-              console.error("Failed to clear cart:", resCartClear);
-            } else {
-              console.log(`Cart cleared for user ${order.user}`);
-            }
-          } catch (err) {
-            console.log(err);
-          }
-          // Generate Invoice PDF and get public URL if not already present
-          if (!order.invoiceUrl) {
-            try {
-              // Fetch user details for invoice generation
-              const user = await User.findById(order.user);
-              if (!user) {
-                console.error(
-                  `User not found for order ${order._id} during PDF generation.`
-                );
-                // Continue, but log the error
-              } else {
-                const invoicePdfUrl = await generateInvoicePdf(order, user);
-                order.invoiceUrl = invoicePdfUrl; // Save the invoice URL to the order
-                console.log(
-                  `Invoice PDF generated and attached for order ${order._id}.`
-                );
-              }
-            } catch (pdfError) {
-              console.error(
-                `Failed to generate or upload invoice PDF for order ${order._id} during payment verification:`,
-                pdfError
-              );
-              // Do not block the order confirmation if PDF generation fails
-            }
-          }
-          order.status = "confirmed";
-          // Also set payment details from Cashfree for completeness
-          order.paymentDetails = {
-            cfPaymentId: cashfreeDetails.cf_order_id, // Assuming this is available
-            status: cashfreeDetails.order_status,
-            paymentTime: new Date(), // Use current time or cashfreeDetails.payment_time if available
-            bankReference: cashfreeDetails.bank_reference, // Assuming this is available
-            method: cashfreeDetails.payment_group, // Assuming this is available
-          };
-
+          invoiceUrl = await generateInvoiceIfNeeded();
           await order.save();
-          return res
-            .status(200)
-            .json({
-              message: "Payment Verified Successfully, Order Confirmed.",
-              order,
-            });
+          await sendUserConfirmationEmail(invoiceUrl);
+          await sendVendorNotificationEmails();
+          await order.save();
+
+          return res.status(200).json({
+            message: "Order status already handled, no update needed.",
+            order,
+          });
         }
-        // Scenario 4: Payment failed and order is not yet failed. Update order status to failed.
-        else if (
-          cashfreeDetails.order_status === "FAILED" &&
-          order.status !== "failed"
-        ) {
-          order.status = "failed";
-          // Update payment details for failed status
+
+        // Scenario 2: Payment PAID - Confirm order
+        if (cfStatus === "PAID" && order.status !== "confirmed" && order.status !== "cancelled") {
+          await clearUserCart();
+          
+          invoiceUrl = await generateInvoiceIfNeeded();
+          
+          order.status = "confirmed";
           order.paymentDetails = {
             cfPaymentId: cashfreeDetails.cf_order_id,
-            status: cashfreeDetails.order_status,
+            status: cfStatus,
             paymentTime: new Date(),
             bankReference: cashfreeDetails.bank_reference,
             method: cashfreeDetails.payment_group,
           };
+
           await order.save();
-          return res
-            .status(200)
-            .json({ message: "Payment Verified, Order Failed.", order });
+          await sendUserConfirmationEmail(invoiceUrl);
+          await sendVendorNotificationEmails();
+          await order.save();
+
+          return res.status(200).json({
+            message: "Payment Verified Successfully, Order Confirmed.",
+            order,
+          });
         }
-        // Scenario 5: Payment is pending and order is not yet pending (and not confirmed/cancelled/failed). Update order status to pending.
-        else if (
-          cashfreeDetails.order_status === "PENDING" &&
-          order.status !== "pending" &&
-          order.status !== "confirmed" &&
-          order.status !== "cancelled" &&
-          order.status !== "failed"
+
+        // Scenario 3: Payment FAILED
+        if (cfStatus === "FAILED" && order.status !== "failed") {
+          order.status = "failed";
+          order.paymentDetails = {
+            cfPaymentId: cashfreeDetails.cf_order_id,
+            status: cfStatus,
+            paymentTime: new Date(),
+            bankReference: cashfreeDetails.bank_reference,
+            method: cashfreeDetails.payment_group,
+          };
+
+          await order.save();
+          await sendUserConfirmationEmail(null);
+          await sendVendorNotificationEmails();
+          await order.save();
+
+          return res.status(200).json({ 
+            message: "Payment Verified, Order Failed.", 
+            order 
+          });
+        }
+
+        // Scenario 4: Payment PENDING
+        if (
+          cfStatus === "PENDING" &&
+          !["pending", "confirmed", "cancelled", "failed"].includes(order.status)
         ) {
           order.status = "pending";
-          // Update payment details for pending status
           order.paymentDetails = {
             cfPaymentId: cashfreeDetails.cf_order_id,
-            status: cashfreeDetails.order_status,
+            status: cfStatus,
             paymentTime: new Date(),
             bankReference: cashfreeDetails.bank_reference,
             method: cashfreeDetails.payment_group,
           };
+
           await order.save();
-          return res
-            .status(200)
-            .json({ message: "Payment Verified, Order Pending.", order });
+          await sendUserConfirmationEmail(null);
+          await sendVendorNotificationEmails();
+          await order.save();
+
+          return res.status(200).json({ 
+            message: "Payment Verified, Order Pending.", 
+            order 
+          });
         }
-        // Scenario 6: Other states - no explicit action or status already matches.
-        else {
-          console.log(
-            `Order ${orderId} is in status ${order.status} and Cashfree status is ${cashfreeDetails.order_status}. No status change applied.`
-          );
-          return res
-            .status(200)
-            .json({
-              message: "Payment Verified, No status change applied.",
-              order,
-            });
-        }
+
+        // Scenario 5: No status change needed
+        console.log(
+          `Order ${orderId} is in status ${order.status} and Cashfree status is ${cfStatus}. No status change applied.`
+        );
+
+        await sendUserConfirmationEmail(order.invoiceUrl);
+        await sendVendorNotificationEmails();
+        await order.save();
+
+        return res.status(200).json({
+          message: "Payment Verified, No status change applied.",
+          order,
+        });
       } catch (cashfreeError) {
         console.error("Error verifying Cashfree payment:", cashfreeError);
         return res.status(500).json({
