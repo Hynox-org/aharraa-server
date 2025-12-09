@@ -38,6 +38,10 @@ const addressSchema = Joi.object({
   street: Joi.string().required(),
   city: Joi.string().required(),
   zip: Joi.string().required(),
+  lat: Joi.number().optional(),
+  lon: Joi.number().optional(),
+  deliveryAddressId: Joi.string().optional(),
+  selectedTimeSlot: Joi.string().required() // ✅ Add this field
 });
 
 // Joi schema for order item
@@ -83,11 +87,27 @@ const checkoutDataSchema = Joi.object({
 
 // Joi schema for order creation
 const orderSchema = Joi.object({
+  // userId: Joi.string().required(),
+  // checkoutData: checkoutDataSchema.required(),
+  // paymentMethod: Joi.string().valid("COD", "CC", "UPI").required(),
+  // totalAmount: Joi.number().min(0).required(),
+  // currency: Joi.string().required(),
   userId: Joi.string().required(),
-  checkoutData: checkoutDataSchema.required(),
-  paymentMethod: Joi.string().valid("COD", "CC", "UPI").required(),
-  totalAmount: Joi.number().min(0).required(),
+  paymentMethod: Joi.string().required(),
+  totalAmount: Joi.number().required(),
   currency: Joi.string().required(),
+  checkoutData: Joi.object({
+    id: Joi.string().required(),
+    userId: Joi.string().required(),
+    items: Joi.array().required(),
+    deliveryAddresses: Joi.object({
+      Breakfast: addressSchema.optional(),
+      Lunch: addressSchema.optional(),
+      Dinner: addressSchema.optional()
+    }).required(),
+    totalPrice: Joi.number().required(),
+    checkoutDate: Joi.string().required()
+  }).required()
 });
 
 // Joi schema for order update
