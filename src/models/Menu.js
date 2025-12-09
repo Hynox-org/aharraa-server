@@ -8,7 +8,7 @@ const MenuItemSchema = new mongoose.Schema({
 
 const MenuSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  vendor: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', required: true },
+  vendor: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', required: true, index: true },
   coverImage: { type: String, default: null },
   description: { type: String },
   perDayPrice: { type: Number, required: true },

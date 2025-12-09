@@ -25,6 +25,7 @@ const MealSchema = new mongoose.Schema({
   price: { type: Number, required: true },
   image: { type: String, required: true },
   vendorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', required: true },
+  menuId: { type: mongoose.Schema.Types.ObjectId, ref: 'Menu', index: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

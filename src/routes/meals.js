@@ -55,7 +55,7 @@ router.get('/', async (req, res) => {
       filter.dietPreference = dietPreference;
     }
 
-    const meals = await Meal.find(filter).populate('vendorId'); // Populate vendor details if needed
+    const meals = await Meal.find(filter).populate('vendorId').lean(); // Populate vendor details if needed
     res.status(200).json(meals);
   } catch (error) {
     console.error('Error fetching meals:', error);
@@ -98,7 +98,7 @@ router.get('/', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    const meal = await Meal.findById(req.params.id).populate('vendorId');
+    const meal = await Meal.findById(req.params.id).populate('vendorId').lean();
     if (!meal) {
       return res.status(404).json({ message: 'Meal not found' });
     }

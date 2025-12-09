@@ -24,7 +24,7 @@ const router = express.Router();
  */
 router.get('/', async (req, res) => {
   try {
-    const plans = await Plan.find();
+    const plans = await Plan.find().lean();
     res.status(200).json(plans);
   } catch (error) {
     console.error('Error fetching plans:', error);
