@@ -70,6 +70,7 @@ const deliveryAddressCategorySchema = Joi.object({
   street: Joi.string().required(),
   city: Joi.string().required(),
   zip: Joi.string().required(),
+  selectedTimeSlot: Joi.string().allow('').optional(), // ADD THIS LINE
 });
 
 const checkoutDataSchema = Joi.object({
@@ -113,7 +114,7 @@ const orderSchema = Joi.object({
 // Joi schema for order update
 const orderUpdateSchema = Joi.object({
   status: Joi.string()
-    .valid("cancelled", "delivered", "pending", "confirmed", "failed")
+    .valid("cancelled", "delivered", "pending", "confirmed", "failed", "readyForDelivery")
     .optional(), // Allow more status updates, but carefully
   deliveryAddresses: Joi.object({
     Breakfast: deliveryAddressCategorySchema.optional(),
@@ -647,7 +648,42 @@ router.put("/:orderId", authMiddleware.protect, async (req, res) => {
     }
 
     if (value.deliveryAddresses) {
-      order.deliveryAddresses = value.deliveryAddresses;
+      // Only allow editing for pending, confirmed, or readyForDelivery orders
+      if (!['pending', 'confirmed', 'readyForDelivery'].includes(order.status)) {
+        return res.status(400).json({ 
+          message: `Cannot edit delivery addresses for ${order.status} orders` 
+        });
+      }
+
+      // Validate and update each address
+      const mealCategories = ['Breakfast', 'Lunch', 'Dinner'];
+      for (const category of mealCategories) {
+        if (value.deliveryAddresses[category]) {
+          const address = value.deliveryAddresses[category];
+          
+          // Validate required fields
+          if (!address.street || !address.city || !address.zip) {
+            return res.status(400).json({ 
+              message: `Missing required fields for ${category} delivery address` 
+            });
+          }
+
+          // Validate zip code for Coimbatore (if applicable)
+          if (address.city === 'Coimbatore' && !address.zip.match(/^641\d{3}$/)) {
+            return res.status(400).json({ 
+              message: `Invalid zip code for ${category}. Coimbatore zip codes must start with 641` 
+            });
+          }
+
+          // Update the address in the Map
+          order.deliveryAddresses.set(category, {
+            street: address.street,
+            city: address.city,
+            zip: address.zip,
+            selectedTimeSlot: address.selectedTimeSlot || '',
+          });
+        }
+      }
     }
 
     if (value.items && Array.isArray(value.items)) {
